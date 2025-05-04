@@ -1,25 +1,35 @@
-version: '3'
+version: '3.8'
 
 services:
   frontend:
     build: ./mess-frontend
     ports:
-      - "5000:5000"
+      - "8501:8501"  # Streamlit default port
     environment:
-      - API_URL=http://backend:8000
+      - API_URL=http://backend:8000  # Use Docker service name
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - mess-network
-    restart: always
+    restart: unless-stopped
 
   backend:
     build: ./mess-backend
     ports:
-      - "8000:8000"
+      - "8000:8000"  # Expose backend port
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - mess-network
-    restart: always
+    restart: unless-stopped
 
 networks:
   mess-network:

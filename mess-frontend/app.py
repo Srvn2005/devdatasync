@@ -4,8 +4,8 @@ import datetime
 import json
 from datetime import datetime, timedelta
 
-# API endpoint
-API_URL = "http://localhost:8000"  # Backend API URL
+import os
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 # In Docker environment, this would be changed to container name
 # API_URL = "http://backend:8000"
 
