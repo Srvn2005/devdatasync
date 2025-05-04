@@ -59,12 +59,19 @@ class MenuItem(BaseModel):
     lunch: str
     dinner: str
 
+class MealItem(BaseModel):
+    item: str
+    quantity: int
+
 class Booking(BaseModel):
     user: str
     date: str
     breakfast: bool = False
     lunch: bool = False
     dinner: bool = False
+    breakfast_items: Optional[List[MealItem]] = []
+    lunch_items: Optional[List[MealItem]] = []
+    dinner_items: Optional[List[MealItem]] = []
 
 class Feedback(BaseModel):
     user: str
@@ -365,13 +372,46 @@ async def get_dashboard_summary(current_user: User = Depends(get_current_user)):
     # Count total bookings
     booking_count = len(bookings)
     
-    # Count today's meals
+    # Count today's meals and calculate item quantities
     today = datetime.now().strftime("%Y-%m-%d")
     today_bookings = [b for b in bookings if b["date"] == today]
     
     breakfast_count = sum(1 for b in today_bookings if b["breakfast"])
     lunch_count = sum(1 for b in today_bookings if b["lunch"])
     dinner_count = sum(1 for b in today_bookings if b["dinner"])
+    
+    # Calculate quantities for each meal item
+    breakfast_items = {}
+    lunch_items = {}
+    dinner_items = {}
+    
+    for booking in today_bookings:
+        # Compile breakfast item quantities
+        if booking.get("breakfast") and "breakfast_items" in booking:
+            for item in booking.get("breakfast_items", []):
+                item_name = item.get("item", "")
+                if item_name:
+                    if item_name not in breakfast_items:
+                        breakfast_items[item_name] = 0
+                    breakfast_items[item_name] += item.get("quantity", 0)
+        
+        # Compile lunch item quantities
+        if booking.get("lunch") and "lunch_items" in booking:
+            for item in booking.get("lunch_items", []):
+                item_name = item.get("item", "")
+                if item_name:
+                    if item_name not in lunch_items:
+                        lunch_items[item_name] = 0
+                    lunch_items[item_name] += item.get("quantity", 0)
+        
+        # Compile dinner item quantities
+        if booking.get("dinner") and "dinner_items" in booking:
+            for item in booking.get("dinner_items", []):
+                item_name = item.get("item", "")
+                if item_name:
+                    if item_name not in dinner_items:
+                        dinner_items[item_name] = 0
+                    dinner_items[item_name] += item.get("quantity", 0)
     
     # Count feedback
     feedback_count = len(feedback_data)
@@ -384,11 +424,12 @@ async def get_dashboard_summary(current_user: User = Depends(get_current_user)):
             "lunch": lunch_count,
             "dinner": dinner_count
         },
-        "feedback_count": feedback_count,
-        "inventory_summary": {
-            "total_items": len(inventory),
-            "categories": len(set(item["category"] for item in inventory))
-        }
+        "meal_items": {
+            "breakfast": breakfast_items,
+            "lunch": lunch_items,
+            "dinner": dinner_items
+        },
+        "feedback_count": feedback_count
     }
 
 @app.get("/dashboard/attendance")

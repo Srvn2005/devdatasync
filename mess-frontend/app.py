@@ -245,24 +245,78 @@ def show_meal_booking():
         
         st.subheader(f"Booking for {day_of_week}, {date_str}")
         
-        # Meal selection checkboxes
-        breakfast = st.checkbox(
-            "Breakfast",
-            value=existing_booking["breakfast"] if existing_booking else False,
-            help=f"Menu: {day_menu['breakfast']}"
-        )
+        # Meal selection sections with item quantities
+        with st.expander("Breakfast", expanded=True):
+            breakfast = st.checkbox(
+                "Select Breakfast",
+                value=existing_booking["breakfast"] if existing_booking else False
+            )
+            
+            # Parse menu items
+            breakfast_items = [item.strip() for item in day_menu['breakfast'].split(',')]
+            
+            breakfast_quantities = []
+            if breakfast:
+                st.markdown("**Select quantities for each breakfast item:**")
+                for item in breakfast_items:
+                    # Check if item exists in existing booking
+                    default_qty = 0
+                    if existing_booking and "breakfast_items" in existing_booking:
+                        for existing_item in existing_booking.get("breakfast_items", []):
+                            if existing_item.get("item") == item:
+                                default_qty = existing_item.get("quantity", 0)
+                    
+                    qty = st.number_input(f"{item}", min_value=0, value=default_qty)
+                    if qty > 0:
+                        breakfast_quantities.append({"item": item, "quantity": qty})
         
-        lunch = st.checkbox(
-            "Lunch",
-            value=existing_booking["lunch"] if existing_booking else False,
-            help=f"Menu: {day_menu['lunch']}"
-        )
+        with st.expander("Lunch", expanded=True):
+            lunch = st.checkbox(
+                "Select Lunch",
+                value=existing_booking["lunch"] if existing_booking else False
+            )
+            
+            # Parse menu items
+            lunch_items = [item.strip() for item in day_menu['lunch'].split(',')]
+            
+            lunch_quantities = []
+            if lunch:
+                st.markdown("**Select quantities for each lunch item:**")
+                for item in lunch_items:
+                    # Check if item exists in existing booking
+                    default_qty = 0
+                    if existing_booking and "lunch_items" in existing_booking:
+                        for existing_item in existing_booking.get("lunch_items", []):
+                            if existing_item.get("item") == item:
+                                default_qty = existing_item.get("quantity", 0)
+                    
+                    qty = st.number_input(f"{item}", min_value=0, value=default_qty)
+                    if qty > 0:
+                        lunch_quantities.append({"item": item, "quantity": qty})
         
-        dinner = st.checkbox(
-            "Dinner",
-            value=existing_booking["dinner"] if existing_booking else False,
-            help=f"Menu: {day_menu['dinner']}"
-        )
+        with st.expander("Dinner", expanded=True):
+            dinner = st.checkbox(
+                "Select Dinner",
+                value=existing_booking["dinner"] if existing_booking else False
+            )
+            
+            # Parse menu items
+            dinner_items = [item.strip() for item in day_menu['dinner'].split(',')]
+            
+            dinner_quantities = []
+            if dinner:
+                st.markdown("**Select quantities for each dinner item:**")
+                for item in dinner_items:
+                    # Check if item exists in existing booking
+                    default_qty = 0
+                    if existing_booking and "dinner_items" in existing_booking:
+                        for existing_item in existing_booking.get("dinner_items", []):
+                            if existing_item.get("item") == item:
+                                default_qty = existing_item.get("quantity", 0)
+                    
+                    qty = st.number_input(f"{item}", min_value=0, value=default_qty)
+                    if qty > 0:
+                        dinner_quantities.append({"item": item, "quantity": qty})
         
         # Save booking
         if st.button("Save Booking"):
@@ -271,7 +325,10 @@ def show_meal_booking():
                 "date": date_str,
                 "breakfast": breakfast,
                 "lunch": lunch,
-                "dinner": dinner
+                "dinner": dinner,
+                "breakfast_items": breakfast_quantities,
+                "lunch_items": lunch_quantities,
+                "dinner_items": dinner_quantities
             }
             
             response = post_api_data("/bookings/save", booking_data)
@@ -310,6 +367,28 @@ def show_meal_booking():
                 })
             
             st.dataframe(bookings_df)
+            
+            # Show selected booking details
+            if existing_booking:
+                st.subheader(f"Details for {date_str}")
+                
+                # Display breakfast items
+                if existing_booking.get("breakfast") and "breakfast_items" in existing_booking and existing_booking["breakfast_items"]:
+                    st.markdown("**Breakfast Items:**")
+                    for item in existing_booking["breakfast_items"]:
+                        st.markdown(f"- {item['item']}: {item['quantity']}")
+                
+                # Display lunch items
+                if existing_booking.get("lunch") and "lunch_items" in existing_booking and existing_booking["lunch_items"]:
+                    st.markdown("**Lunch Items:**")
+                    for item in existing_booking["lunch_items"]:
+                        st.markdown(f"- {item['item']}: {item['quantity']}")
+                
+                # Display dinner items
+                if existing_booking.get("dinner") and "dinner_items" in existing_booking and existing_booking["dinner_items"]:
+                    st.markdown("**Dinner Items:**")
+                    for item in existing_booking["dinner_items"]:
+                        st.markdown(f"- {item['item']}: {item['quantity']}")
         else:
             st.info("You have no bookings yet.")
 
@@ -461,7 +540,7 @@ def show_dashboard():
         feedback_data = {"average_ratings": {}, "recent_comments": []}
     
     # Summary metrics
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric("Total Students", summary_data["student_count"])
@@ -471,9 +550,6 @@ def show_dashboard():
     
     with col3:
         st.metric("Feedback Received", summary_data["feedback_count"])
-    
-    with col4:
-        st.metric("Inventory Items", summary_data["inventory_summary"]["total_items"])
     
     # Today's meals
     st.subheader("Today's Meals")
@@ -489,6 +565,46 @@ def show_dashboard():
     
     with meal_col3:
         st.metric("Dinner", today_meals["dinner"])
+    
+    # Display meal item quantities if available
+    if "meal_items" in summary_data:
+        st.subheader("Today's Meal Item Quantities")
+        meal_items = summary_data["meal_items"]
+        
+        # Display breakfast items
+        if meal_items["breakfast"]:
+            with st.expander("Breakfast Items"):
+                items_df = []
+                for item, quantity in meal_items["breakfast"].items():
+                    items_df.append({"Item": item, "Quantity": quantity})
+                if items_df:
+                    st.dataframe(items_df)
+                else:
+                    st.info("No breakfast items ordered today")
+        
+        # Display lunch items
+        if meal_items["lunch"]:
+            with st.expander("Lunch Items"):
+                items_df = []
+                for item, quantity in meal_items["lunch"].items():
+                    items_df.append({"Item": item, "Quantity": quantity})
+                if items_df:
+                    st.dataframe(items_df)
+                else:
+                    st.info("No lunch items ordered today")
+        
+        # Display dinner items
+        if meal_items["dinner"]:
+            with st.expander("Dinner Items"):
+                items_df = []
+                for item, quantity in meal_items["dinner"].items():
+                    items_df.append({"Item": item, "Quantity": quantity})
+                if items_df:
+                    st.dataframe(items_df)
+                else:
+                    st.info("No dinner items ordered today")
+    else:
+        st.info("Detailed meal item quantities not available")
     
     # Attendance trend
     st.subheader("Attendance Trend")
