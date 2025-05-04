@@ -109,6 +109,16 @@ Kubernetes handles:
    ```
    Use the EXTERNAL-IP address displayed to access the application.
 
+### Local Development with Docker Compose
+
+For local development, you can use Docker Compose:
+
+```bash
+docker-compose up
+```
+
+This will start both the frontend and backend services, with the frontend available at http://localhost:5000.
+
 ## Development Workflow
 
 1. Create a feature branch from main
@@ -142,3 +152,18 @@ Kubernetes handles:
 3. Enhance monitoring with custom metrics and alerts
 4. Implement distributed tracing with Jaeger or Zipkin
 5. Integrate security scanning tools like Trivy and SonarQube
+
+## Application Features
+
+### Student Features
+- View weekly menu
+- Book meals in advance
+- Provide feedback on meals
+- Track attendance
+
+### Admin Features
+- Dashboard with insights and analytics
+- Manage student records
+- Manage menu items
+- Track inventory
+- Generate various reports (attendance, feedback, financial, inventory)

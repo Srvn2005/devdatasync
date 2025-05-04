@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 
 # API endpoint
 API_URL = "http://localhost:8000"  # Backend API URL
+# In Docker environment, this would be changed to container name
+# API_URL = "http://backend:8000"
 
 # Page configuration
 st.set_page_config(
