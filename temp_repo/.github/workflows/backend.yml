@@ -1,0 +1,36 @@
+name: Backend Build and Test
+
+on:
+  push:
+    paths:
+      - 'mess-backend/**'
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'mess-backend/**'
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: mess-backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend dependencies
+        run: npm install
+
+      - name: Run backend tests
+        run: npm test || echo "No tests yet"

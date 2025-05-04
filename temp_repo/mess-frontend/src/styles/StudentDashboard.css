@@ -1,0 +1,77 @@
+.dashboard-container {
+    font-family: 'Segoe UI', sans-serif;
+    background-color: #f9fafb;
+    min-height: 100vh;
+  }
+  
+  .dashboard-content {
+    max-width: 600px;
+    margin:  20px;  /* 🔼 top margin increased to 80px */
+    background-color: #e3f2fd;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  
+  
+  
+  .meal-section {
+    margin-bottom: 0px;
+  }
+  
+  .meal-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0px;
+  }
+  
+  select, input[type="number"] {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    font-size: 1rem;
+  }
+  
+  input[type="number"] {
+    max-width: 80px;
+    margin-top: 10px;
+  }
+  
+  .button-group {
+    margin-top: 20px;
+  }
+  
+  .order-btn, .delete-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  
+  .order-btn {
+    background-color: #4caf50;
+  }
+  
+  .order-btn:hover {
+    background-color: #388e3c;
+  }
+  
+  .delete-btn {
+    background-color: crimson;
+    margin-left: 10px;
+  }
+  
+  .delete-btn:hover {
+    background-color: #a60000;
+  }
+  
+  .loading-msg {
+    text-align: center;
+    font-size: 1.2rem;
+    padding: 40px;
+  }
+  

@@ -1,32 +1,32 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
+from typing import List, Dict, Optional
 from datetime import datetime, timedelta
+from passlib.context import CryptContext
+from jose import JWTError, jwt
 import json
 import os
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-import jwt
-from passlib.context import CryptContext
-import uuid
 
+# JWT Settings
+SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# Initialize FastAPI
 app = FastAPI(title="Hostel Mess Management System API")
 
-# Configure CORS
+# Set up CORS for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, set this to specific origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Authentication configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-for-jwt")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-# Password hashing
+# Security
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -79,86 +79,48 @@ class InventoryItem(BaseModel):
     unit: str
     category: str
 
-# In-memory data storage (in production, this would be a database)
-users_db = {
+# In-memory data (will be replaced with a database in production)
+fake_users_db = {
     "admin": {
         "username": "admin",
         "name": "Admin User",
         "email": "admin@example.com",
         "phone": "1234567890",
-        "room_number": "Admin",
+        "room_number": "A-101",
         "role": "admin",
-        "hashed_password": pwd_context.hash("admin123")
+        "hashed_password": pwd_context.hash("adminpassword")
     },
-    "student1": {
-        "username": "student1",
-        "name": "Student One",
-        "email": "student1@example.com",
+    "student": {
+        "username": "student",
+        "name": "Student User",
+        "email": "student@example.com",
         "phone": "9876543210",
-        "room_number": "A101",
+        "room_number": "B-202",
         "role": "student",
-        "hashed_password": pwd_context.hash("student123")
+        "hashed_password": pwd_context.hash("studentpassword")
     }
 }
 
-menu_db = [
-    {
-        "day": "Monday",
-        "breakfast": "Bread, Butter, Jam, Eggs, Milk, Tea",
-        "lunch": "Rice, Dal, Chapati, Paneer Curry, Salad",
-        "dinner": "Rice, Dal, Chapati, Mixed Vegetable, Curd"
-    },
-    {
-        "day": "Tuesday",
-        "breakfast": "Idli, Sambhar, Coconut Chutney, Tea, Coffee",
-        "lunch": "Rice, Dal, Chapati, Chicken Curry, Salad",
-        "dinner": "Rice, Dal, Chapati, Aloo Gobi, Raita"
-    },
-    {
-        "day": "Wednesday",
-        "breakfast": "Paratha, Curd, Pickle, Tea, Coffee",
-        "lunch": "Rice, Dal, Chapati, Rajma, Salad",
-        "dinner": "Rice, Dal, Chapati, Egg Curry, Salad"
-    },
-    {
-        "day": "Thursday",
-        "breakfast": "Poha, Upma, Tea, Coffee",
-        "lunch": "Rice, Dal, Chapati, Chole, Salad",
-        "dinner": "Rice, Dal, Chapati, Mix Veg, Kheer"
-    },
-    {
-        "day": "Friday",
-        "breakfast": "Dosa, Sambhar, Coconut Chutney, Tea, Coffee",
-        "lunch": "Rice, Dal, Chapati, Kadhi Pakora, Salad",
-        "dinner": "Rice, Dal, Chapati, Matar Paneer, Raita"
-    },
-    {
-        "day": "Saturday",
-        "breakfast": "Bread, Omelette, Jam, Butter, Tea, Coffee",
-        "lunch": "Rice, Dal, Chapati, Fish Curry, Salad",
-        "dinner": "Rice, Dal, Chapati, Aloo Matar, Custard"
-    },
-    {
-        "day": "Sunday",
-        "breakfast": "Puri, Aloo Sabzi, Tea, Coffee",
-        "lunch": "Rice, Dal, Chapati, Mutton/Paneer, Salad, Ice Cream",
-        "dinner": "Rice, Dal, Chapati, Veg Biryani, Raita"
-    }
+weekly_menu = [
+    {"day": "Monday", "breakfast": "Bread, Eggs, Tea", "lunch": "Rice, Dal, Vegetables", "dinner": "Roti, Curry, Salad"},
+    {"day": "Tuesday", "breakfast": "Paratha, Curd, Coffee", "lunch": "Rice, Sambar, Papad", "dinner": "Roti, Paneer, Pickle"},
+    {"day": "Wednesday", "breakfast": "Idli, Sambar, Tea", "lunch": "Rice, Rajma, Curd", "dinner": "Roti, Chicken, Salad"},
+    {"day": "Thursday", "breakfast": "Upma, Chutney, Coffee", "lunch": "Rice, Dal, Pakoda", "dinner": "Roti, Mix Veg, Raita"},
+    {"day": "Friday", "breakfast": "Poha, Tea", "lunch": "Rice, Kadhi, Papad", "dinner": "Pulao, Raita, Sweet"},
+    {"day": "Saturday", "breakfast": "Sandwich, Coffee", "lunch": "Chole Bhature, Pickle", "dinner": "Roti, Fish Curry, Salad"},
+    {"day": "Sunday", "breakfast": "Aloo Paratha, Curd, Tea", "lunch": "Biryani, Raita, Sweet", "dinner": "Pizza, Soup, Ice Cream"}
 ]
 
-bookings_db = []
-feedback_db = []
-inventory_db = [
+bookings = []
+feedback_data = []
+inventory = [
     {"name": "Rice", "quantity": 50.0, "unit": "kg", "category": "Grains"},
     {"name": "Wheat Flour", "quantity": 30.0, "unit": "kg", "category": "Grains"},
-    {"name": "Potatoes", "quantity": 20.0, "unit": "kg", "category": "Vegetables"},
-    {"name": "Onions", "quantity": 15.0, "unit": "kg", "category": "Vegetables"},
+    {"name": "Milk", "quantity": 20.0, "unit": "liter", "category": "Dairy"},
     {"name": "Tomatoes", "quantity": 10.0, "unit": "kg", "category": "Vegetables"},
-    {"name": "Milk", "quantity": 25.0, "unit": "liters", "category": "Dairy"},
-    {"name": "Cooking Oil", "quantity": 20.0, "unit": "liters", "category": "Other"},
-    {"name": "Sugar", "quantity": 10.0, "unit": "kg", "category": "Other"},
-    {"name": "Salt", "quantity": 5.0, "unit": "kg", "category": "Other"},
-    {"name": "Chicken", "quantity": 15.0, "unit": "kg", "category": "Meat"}
+    {"name": "Onions", "quantity": 15.0, "unit": "kg", "category": "Vegetables"},
+    {"name": "Chicken", "quantity": 25.0, "unit": "kg", "category": "Meat"},
+    {"name": "Cooking Oil", "quantity": 10.0, "unit": "liter", "category": "Oils"}
 ]
 
 # Helper functions
@@ -166,8 +128,8 @@ def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_user(username: str):
-    if username in users_db:
-        user_dict = users_db[username]
+    if username in fake_users_db:
+        user_dict = fake_users_db[username]
         return UserInDB(**user_dict)
     return None
 
@@ -201,19 +163,17 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         if username is None:
             raise credentials_exception
         token_data = TokenData(username=username)
-    except jwt.PyJWTError:
+    except JWTError:
         raise credentials_exception
     user = get_user(username=token_data.username)
     if user is None:
         raise credentials_exception
     return user
 
-# API Endpoints
-
-# Authentication
-@app.post("/auth/login", response_model=Token)
-async def login_for_access_token(form_data: dict):
-    user = authenticate_user(form_data["username"], form_data["password"])
+# API endpoints
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -222,139 +182,142 @@ async def login_for_access_token(form_data: dict):
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.username, "role": user.role}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer", "role": user.role}
 
-# Menu Endpoints
-@app.get("/menu/weekly")
+@app.get("/menu", response_model=List[MenuItem])
 async def get_weekly_menu():
-    return menu_db
+    return weekly_menu
 
 @app.post("/menu/update")
 async def update_menu(menu_item: MenuItem, current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to update menu")
+        raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Find and update the menu item
-    for i, item in enumerate(menu_db):
+    for i, item in enumerate(weekly_menu):
         if item["day"] == menu_item.day:
-            menu_db[i] = menu_item.dict()
-            return {"status": "success", "message": f"Menu for {menu_item.day} updated"}
+            weekly_menu[i] = menu_item.dict()
+            return {"message": f"Menu for {menu_item.day} updated successfully"}
     
-    # If day not found, add it
-    menu_db.append(menu_item.dict())
-    return {"status": "success", "message": f"Menu for {menu_item.day} added"}
+    weekly_menu.append(menu_item.dict())
+    return {"message": f"Menu for {menu_item.day} added successfully"}
 
-# Booking Endpoints
-@app.get("/bookings/user/{username}")
+@app.get("/bookings/{username}")
 async def get_user_bookings(username: str, current_user: User = Depends(get_current_user)):
     if current_user.username != username and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to view these bookings")
+        raise HTTPException(status_code=403, detail="Not authorized")
     
-    user_bookings = [booking for booking in bookings_db if booking["user"] == username]
+    user_bookings = [booking for booking in bookings if booking["user"] == username]
     return user_bookings
 
 @app.post("/bookings/save")
 async def save_booking(booking: Booking, current_user: User = Depends(get_current_user)):
     if current_user.username != booking.user and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to save this booking")
+        raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Check if booking already exists for this date and user
-    for i, existing in enumerate(bookings_db):
-        if existing["user"] == booking.user and existing["date"] == booking.date:
-            # Update existing booking
-            bookings_db[i] = booking.dict()
-            return {"status": "success", "message": "Booking updated"}
+    # Check if booking already exists for the date
+    existing_booking = next((b for b in bookings if b["user"] == booking.user and b["date"] == booking.date), None)
     
-    # Add new booking
-    bookings_db.append(booking.dict())
-    return {"status": "success", "message": "Booking saved"}
+    if existing_booking:
+        # Update existing booking
+        for i, b in enumerate(bookings):
+            if b["user"] == booking.user and b["date"] == booking.date:
+                bookings[i] = booking.dict()
+                return {"message": "Booking updated successfully"}
+    else:
+        # Create new booking
+        bookings.append(booking.dict())
+        return {"message": "Booking created successfully"}
 
-# Feedback Endpoints
 @app.post("/feedback/submit")
 async def submit_feedback(feedback: Feedback, current_user: User = Depends(get_current_user)):
     if current_user.username != feedback.user and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to submit this feedback")
+        raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Add feedback with ID
-    feedback_data = feedback.dict()
-    feedback_data["id"] = str(uuid.uuid4())
-    feedback_data["timestamp"] = datetime.utcnow().isoformat()
-    
-    feedback_db.append(feedback_data)
-    return {"status": "success", "message": "Feedback submitted", "id": feedback_data["id"]}
+    feedback_data.append(feedback.dict())
+    return {"message": "Feedback submitted successfully"}
 
-@app.get("/feedback/user/{username}")
+@app.get("/feedback/{username}")
 async def get_user_feedback(username: str, current_user: User = Depends(get_current_user)):
     if current_user.username != username and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to view this feedback")
+        raise HTTPException(status_code=403, detail="Not authorized")
     
-    user_feedback = [feedback for feedback in feedback_db if feedback["user"] == username]
+    user_feedback = [feedback for feedback in feedback_data if feedback["user"] == username]
     return user_feedback
 
-# Inventory Endpoints
-@app.get("/inventory/all")
+@app.get("/inventory")
 async def get_all_inventory(current_user: User = Depends(get_current_user)):
-    return inventory_db
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    return inventory
 
 @app.post("/inventory/update")
 async def update_inventory(item: InventoryItem, current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to update inventory")
+        raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Check if item already exists
-    for i, existing in enumerate(inventory_db):
-        if existing["name"] == item.name:
-            # Update existing item
-            inventory_db[i] = item.dict()
-            return {"status": "success", "message": f"Inventory item {item.name} updated"}
+    # Check if item exists
+    existing_item = next((i for i in inventory if i["name"] == item.name), None)
     
-    # Add new item
-    inventory_db.append(item.dict())
-    return {"status": "success", "message": f"Inventory item {item.name} added"}
+    if existing_item:
+        # Update existing item
+        for i, inv_item in enumerate(inventory):
+            if inv_item["name"] == item.name:
+                inventory[i] = item.dict()
+                return {"message": f"Inventory item {item.name} updated successfully"}
+    else:
+        # Create new item
+        inventory.append(item.dict())
+        return {"message": f"Inventory item {item.name} added successfully"}
 
-# Attendance Endpoints
-@app.get("/attendance/user/{username}")
+@app.get("/attendance/{username}")
 async def get_user_attendance(username: str, current_user: User = Depends(get_current_user)):
     if current_user.username != username and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to view this attendance")
+        raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Generate sample attendance data based on bookings
-    user_bookings = [booking for booking in bookings_db if booking["user"] == username]
+    # Calculate attendance based on bookings
+    user_bookings = [booking for booking in bookings if booking["user"] == username]
     
     attendance = []
     for booking in user_bookings:
-        # Simulate random attendance (in a real app, this would be actual data)
-        import random
-        attendance_record = {
+        meals_attended = 0
+        if booking["breakfast"]:
+            meals_attended += 1
+        if booking["lunch"]:
+            meals_attended += 1
+        if booking["dinner"]:
+            meals_attended += 1
+        
+        attendance.append({
             "date": booking["date"],
-            "breakfast_booked": booking["breakfast"],
-            "lunch_booked": booking["lunch"],
-            "dinner_booked": booking["dinner"],
-            "breakfast_attended": booking["breakfast"] and random.random() > 0.2,
-            "lunch_attended": booking["lunch"] and random.random() > 0.1,
-            "dinner_attended": booking["dinner"] and random.random() > 0.15
-        }
-        attendance.append(attendance_record)
+            "meals_attended": meals_attended,
+            "total_meals": 3,
+            "details": {
+                "breakfast": booking["breakfast"],
+                "lunch": booking["lunch"],
+                "dinner": booking["dinner"]
+            }
+        })
     
     return attendance
 
-# Admin Endpoints
-@app.get("/admin/students")
+@app.get("/students")
 async def get_all_students(current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
     students = []
-    for username, user_data in users_db.items():
+    for username, user_data in fake_users_db.items():
         if user_data["role"] == "student":
-            student = {k: v for k, v in user_data.items() if k != "hashed_password"}
-            students.append(student)
+            user_copy = user_data.copy()
+            user_copy.pop("hashed_password")
+            students.append(user_copy)
     
     return students
 
-@app.post("/admin/students/update")
+@app.post("/students/update")
 async def update_student(student_data: dict, current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -363,131 +326,138 @@ async def update_student(student_data: dict, current_user: User = Depends(get_cu
     if not username:
         raise HTTPException(status_code=400, detail="Username is required")
     
-    # Check if student exists
-    if username in users_db:
+    if username in fake_users_db:
         # Update existing student
-        for key, value in student_data.items():
-            if key != "password" and key != "role":  # Don't update role directly
-                users_db[username][key] = value
+        student = fake_users_db[username]
+        student.update({k: v for k, v in student_data.items() if k != "hashed_password"})
         
         # Update password if provided
-        if "password" in student_data and student_data["password"]:
-            users_db[username]["hashed_password"] = pwd_context.hash(student_data["password"])
+        if "password" in student_data:
+            student["hashed_password"] = pwd_context.hash(student_data["password"])
         
-        return {"status": "success", "message": f"Student {username} updated"}
+        return {"message": f"Student {username} updated successfully"}
     else:
         # Create new student
+        if "password" not in student_data:
+            raise HTTPException(status_code=400, detail="Password is required for new students")
+        
         new_student = {
             "username": username,
             "name": student_data.get("name", ""),
             "email": student_data.get("email", ""),
             "phone": student_data.get("phone", ""),
             "room_number": student_data.get("room_number", ""),
-            "role": "student"
+            "role": "student",
+            "hashed_password": pwd_context.hash(student_data["password"])
         }
         
-        if "password" in student_data and student_data["password"]:
-            new_student["hashed_password"] = pwd_context.hash(student_data["password"])
-        else:
-            new_student["hashed_password"] = pwd_context.hash("changeme")  # Default password
-        
-        users_db[username] = new_student
-        return {"status": "success", "message": f"Student {username} created"}
+        fake_users_db[username] = new_student
+        return {"message": f"Student {username} created successfully"}
 
-# Dashboard and Reports Endpoints
-@app.get("/admin/dashboard/summary")
+@app.get("/dashboard/summary")
 async def get_dashboard_summary(current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Generate sample dashboard data
-    today = datetime.now().strftime("%Y-%m-%d")
-    
     # Count students
-    student_count = sum(1 for user in users_db.values() if user["role"] == "student")
+    student_count = sum(1 for user in fake_users_db.values() if user["role"] == "student")
     
-    # Count today's bookings and attendance
-    today_bookings = sum(1 for booking in bookings_db 
-                         if booking["date"] == today and 
-                         (booking["breakfast"] or booking["lunch"] or booking["dinner"]))
+    # Count total bookings
+    booking_count = len(bookings)
     
-    # In a real app, this would be actual attendance data
-    today_attendance = int(today_bookings * 0.85)  # Assume 85% attendance rate
+    # Count today's meals
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_bookings = [b for b in bookings if b["date"] == today]
     
-    # Calculate weekly revenue (sample data)
-    weekly_revenue = student_count * 50 * 7  # Assuming ₹50 per student per day
+    breakfast_count = sum(1 for b in today_bookings if b["breakfast"])
+    lunch_count = sum(1 for b in today_bookings if b["lunch"])
+    dinner_count = sum(1 for b in today_bookings if b["dinner"])
     
-    # Calculate average feedback score
-    if feedback_db:
-        total_ratings = 0
-        rating_count = 0
-        for feedback in feedback_db:
-            for category, rating in feedback["ratings"].items():
-                total_ratings += rating
-                rating_count += 1
-        avg_feedback = total_ratings / rating_count if rating_count > 0 else 0
-    else:
-        avg_feedback = 0
+    # Count feedback
+    feedback_count = len(feedback_data)
     
     return {
-        "total_students": student_count,
-        "today_bookings": today_bookings,
-        "today_attendance": today_attendance,
-        "weekly_revenue": weekly_revenue,
-        "avg_feedback": avg_feedback
+        "student_count": student_count,
+        "booking_count": booking_count,
+        "today_meals": {
+            "breakfast": breakfast_count,
+            "lunch": lunch_count,
+            "dinner": dinner_count
+        },
+        "feedback_count": feedback_count,
+        "inventory_summary": {
+            "total_items": len(inventory),
+            "categories": len(set(item["category"] for item in inventory))
+        }
     }
 
-@app.get("/admin/dashboard/attendance")
+@app.get("/dashboard/attendance")
 async def get_dashboard_attendance(current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Generate sample attendance data for the past week
-    today = datetime.now()
+    # Get all dates from bookings
+    all_dates = set(booking["date"] for booking in bookings)
     
-    attendance_data = []
-    for i in range(7):
-        date = (today - timedelta(days=i)).strftime("%Y-%m-%d")
-        day_name = (today - timedelta(days=i)).strftime("%A")
+    # Calculate attendance by date
+    attendance_by_date = []
+    for date in all_dates:
+        date_bookings = [b for b in bookings if b["date"] == date]
+        breakfast_count = sum(1 for b in date_bookings if b["breakfast"])
+        lunch_count = sum(1 for b in date_bookings if b["lunch"])
+        dinner_count = sum(1 for b in date_bookings if b["dinner"])
         
-        # In a real app, this would be actual data
-        breakfast_count = 20 + i  # Sample data
-        lunch_count = 25 + i      # Sample data
-        dinner_count = 22 + i     # Sample data
-        
-        attendance_data.append({
+        attendance_by_date.append({
             "date": date,
-            "day": day_name,
             "breakfast": breakfast_count,
             "lunch": lunch_count,
             "dinner": dinner_count,
             "total": breakfast_count + lunch_count + dinner_count
         })
     
-    return attendance_data
+    # Sort by date
+    attendance_by_date.sort(key=lambda x: x["date"])
+    
+    return attendance_by_date
 
-@app.get("/admin/dashboard/feedback")
+@app.get("/dashboard/feedback")
 async def get_dashboard_feedback(current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Get recent feedback with names instead of usernames
-    recent_feedback = []
-    for feedback in sorted(feedback_db, key=lambda x: x.get("timestamp", ""), reverse=True)[:10]:
-        username = feedback["user"]
-        name = users_db.get(username, {}).get("name", username)
-        
-        feedback_entry = {
-            "id": feedback.get("id", ""),
-            "date": feedback["date"],
-            "name": name,
-            "meal": feedback["meal"],
-            "average_rating": sum(feedback["ratings"].values()) / len(feedback["ratings"]),
-            "comments": feedback.get("comments", "")
-        }
-        recent_feedback.append(feedback_entry)
+    # Calculate average ratings
+    meals = ["breakfast", "lunch", "dinner"]
+    rating_categories = ["taste", "quantity", "hygiene", "service"]
     
-    return recent_feedback
+    meal_ratings = {}
+    for meal in meals:
+        meal_feedback = [f for f in feedback_data if f["meal"] == meal]
+        if not meal_feedback:
+            meal_ratings[meal] = {cat: 0 for cat in rating_categories}
+            continue
+        
+        meal_avg = {}
+        for category in rating_categories:
+            ratings = [f["ratings"].get(category, 0) for f in meal_feedback]
+            meal_avg[category] = sum(ratings) / len(ratings) if ratings else 0
+        
+        meal_ratings[meal] = meal_avg
+    
+    # Get recent comments
+    recent_comments = []
+    for feedback in sorted(feedback_data, key=lambda x: x["date"], reverse=True)[:5]:
+        if feedback.get("comments"):
+            recent_comments.append({
+                "user": feedback["user"],
+                "date": feedback["date"],
+                "meal": feedback["meal"],
+                "comment": feedback["comments"]
+            })
+    
+    return {
+        "average_ratings": meal_ratings,
+        "recent_comments": recent_comments
+    }
 
 @app.get("/reports/attendance")
 async def get_attendance_report(
@@ -498,65 +468,49 @@ async def get_attendance_report(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # In a real app, this would query a database
-    # For demo purposes, we'll generate sample data
+    # Filter bookings within date range
+    filtered_bookings = [
+        b for b in bookings 
+        if start_date <= b["date"] <= end_date
+    ]
     
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
-    
-    days = (end - start).days + 1
-    
-    # Generate daily data
-    daily_data = []
-    total_bookings = 0
-    total_attended = 0
-    
-    for i in range(days):
-        current_date = (start + timedelta(days=i)).strftime("%Y-%m-%d")
-        day_name = (start + timedelta(days=i)).strftime("%A")
+    # Calculate attendance by student
+    student_attendance = {}
+    for booking in filtered_bookings:
+        username = booking["user"]
+        if username not in student_attendance:
+            student_attendance[username] = {
+                "total_meals": 0,
+                "meals_attended": {
+                    "breakfast": 0,
+                    "lunch": 0,
+                    "dinner": 0
+                }
+            }
         
-        # Sample data generation
-        if day_name in ["Saturday", "Sunday"]:
-            bookings = 40 + int(5 * (i % 3))  # Less bookings on weekends
+        if booking["breakfast"]:
+            student_attendance[username]["meals_attended"]["breakfast"] += 1
+            student_attendance[username]["total_meals"] += 1
+        
+        if booking["lunch"]:
+            student_attendance[username]["meals_attended"]["lunch"] += 1
+            student_attendance[username]["total_meals"] += 1
+        
+        if booking["dinner"]:
+            student_attendance[username]["meals_attended"]["dinner"] += 1
+            student_attendance[username]["total_meals"] += 1
+    
+    # Get student names
+    for username in student_attendance:
+        if username in fake_users_db:
+            student_attendance[username]["name"] = fake_users_db[username]["name"]
         else:
-            bookings = 60 + int(8 * (i % 5))
-            
-        attended = int(bookings * (0.75 + 0.15 * (i % 3) / 3))  # Random attendance rate
-        
-        daily_data.append({
-            "date": current_date,
-            "day": day_name,
-            "bookings": bookings,
-            "attended": attended,
-            "percentage": round(attended / bookings * 100 if bookings > 0 else 0, 1)
-        })
-        
-        total_bookings += bookings
-        total_attended += attended
-    
-    # Generate details for students (sample data)
-    details = []
-    for username, user in users_db.items():
-        if user["role"] == "student":
-            # Sample attendance data for each student
-            student_bookings = int(days * 2.5 * (0.7 + 0.3 * (hash(username) % 10) / 10))
-            student_attended = int(student_bookings * (0.7 + 0.3 * (hash(username) % 10) / 10))
-            
-            details.append({
-                "username": username,
-                "name": user["name"],
-                "room": user["room_number"],
-                "bookings": student_bookings,
-                "attended": student_attended,
-                "percentage": round(student_attended / student_bookings * 100 if student_bookings > 0 else 0, 1)
-            })
+            student_attendance[username]["name"] = username
     
     return {
-        "total_bookings": total_bookings,
-        "total_attended": total_attended,
-        "attendance_rate": round(total_attended / total_bookings * 100 if total_bookings > 0 else 0, 1),
-        "daily": daily_data,
-        "details": sorted(details, key=lambda x: x["percentage"], reverse=True)
+        "start_date": start_date,
+        "end_date": end_date,
+        "student_attendance": student_attendance
     }
 
 @app.get("/reports/feedback")
@@ -569,98 +523,45 @@ async def get_feedback_report(
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Filter feedback within date range
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
-    
-    # In a real app, this would query a database
-    # For demo, we'll use the existing data and add some if needed
-    
-    # Ensure we have some data to work with
-    if len(feedback_db) < 10:
-        # Generate sample feedback data
-        for i in range(20):
-            date = (start + timedelta(days=i % 10)).strftime("%Y-%m-%d")
-            meal = ["breakfast", "lunch", "dinner"][i % 3]
-            user = list(users_db.keys())[i % len(users_db)]
-            
-            feedback_data = {
-                "id": str(uuid.uuid4()),
-                "user": user,
-                "date": date,
-                "meal": meal,
-                "ratings": {
-                    "taste": 3 + (i % 3),
-                    "quantity": 3 + ((i + 1) % 3),
-                    "cleanliness": 4 + (i % 2),
-                    "service": 3 + ((i + 2) % 3)
-                },
-                "comments": f"Sample feedback #{i}",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            feedback_db.append(feedback_data)
-    
-    # Filter feedback within date range
     filtered_feedback = [
-        f for f in feedback_db 
+        f for f in feedback_data 
         if start_date <= f["date"] <= end_date
     ]
     
-    # Calculate average ratings
-    total_ratings = {"taste": 0, "quantity": 0, "cleanliness": 0, "service": 0}
-    counts = {"taste": 0, "quantity": 0, "cleanliness": 0, "service": 0}
-    
-    for feedback in filtered_feedback:
-        for category, rating in feedback["ratings"].items():
-            total_ratings[category] += rating
-            counts[category] += 1
-    
-    average_ratings = {
-        category: round(total / counts[category], 1) if counts[category] > 0 else 0
-        for category, total in total_ratings.items()
-    }
-    
-    # Get ratings by meal
+    # Calculate average ratings by meal and category
     meals = ["breakfast", "lunch", "dinner"]
-    by_meal = []
+    rating_categories = ["taste", "quantity", "hygiene", "service"]
     
+    meal_ratings = {}
     for meal in meals:
         meal_feedback = [f for f in filtered_feedback if f["meal"] == meal]
+        if not meal_feedback:
+            meal_ratings[meal] = {cat: 0 for cat in rating_categories}
+            continue
         
-        if meal_feedback:
-            avg_rating = sum(
-                sum(f["ratings"].values()) / len(f["ratings"]) 
-                for f in meal_feedback
-            ) / len(meal_feedback)
-        else:
-            avg_rating = 0
+        meal_avg = {}
+        for category in rating_categories:
+            ratings = [f["ratings"].get(category, 0) for f in meal_feedback]
+            meal_avg[category] = sum(ratings) / len(ratings) if ratings else 0
         
-        by_meal.append({
-            "meal": meal.capitalize(),
-            "count": len(meal_feedback),
-            "average_rating": round(avg_rating, 1)
-        })
+        meal_ratings[meal] = meal_avg
     
-    # Get recent comments
-    recent_comments = []
-    for feedback in sorted(filtered_feedback, key=lambda x: x.get("date", ""), reverse=True)[:10]:
-        if "comments" in feedback and feedback["comments"].strip():
-            username = feedback["user"]
-            name = users_db.get(username, {}).get("name", username)
-            
-            comment_entry = {
+    # Collect all comments
+    all_comments = []
+    for feedback in filtered_feedback:
+        if feedback.get("comments"):
+            all_comments.append({
+                "user": feedback["user"],
                 "date": feedback["date"],
-                "name": name,
-                "meal": feedback["meal"].capitalize(),
-                "rating": sum(feedback["ratings"].values()) / len(feedback["ratings"]),
+                "meal": feedback["meal"],
                 "comment": feedback["comments"]
-            }
-            recent_comments.append(comment_entry)
+            })
     
     return {
-        "average_ratings": average_ratings,
-        "by_meal": by_meal,
-        "recent_comments": recent_comments,
-        "total_feedback": len(filtered_feedback)
+        "start_date": start_date,
+        "end_date": end_date,
+        "average_ratings": meal_ratings,
+        "comments": all_comments
     }
 
 @app.get("/reports/financial")
@@ -672,81 +573,78 @@ async def get_financial_report(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # In a real app, this would query financial records
-    # For demo purposes, we'll generate sample data
+    # Mock financial data for demonstration
+    meal_costs = {
+        "breakfast": 25.0,
+        "lunch": 40.0,
+        "dinner": 35.0
+    }
     
-    # Number of students
-    student_count = sum(1 for user in users_db.values() if user["role"] == "student")
+    # Filter bookings for the given month and year
+    filtered_bookings = []
+    for booking in bookings:
+        booking_date = datetime.strptime(booking["date"], "%Y-%m-%d")
+        if booking_date.month == month and booking_date.year == year:
+            filtered_bookings.append(booking)
     
-    # Calculate days in month
-    import calendar
-    days_in_month = calendar.monthrange(year, month)[1]
+    # Calculate total costs
+    total_breakfast_count = sum(1 for b in filtered_bookings if b["breakfast"])
+    total_lunch_count = sum(1 for b in filtered_bookings if b["lunch"])
+    total_dinner_count = sum(1 for b in filtered_bookings if b["dinner"])
     
-    # Generate revenue data
-    daily_rate = 50  # ₹50 per student per day
-    monthly_revenue = student_count * daily_rate * days_in_month
+    breakfast_cost = total_breakfast_count * meal_costs["breakfast"]
+    lunch_cost = total_lunch_count * meal_costs["lunch"]
+    dinner_cost = total_dinner_count * meal_costs["dinner"]
     
-    # Revenue breakdown
-    revenue_breakdown = [
-        {"category": "Regular Meals", "amount": monthly_revenue * 0.85},
-        {"category": "Special Meals", "amount": monthly_revenue * 0.1},
-        {"category": "Extra Items", "amount": monthly_revenue * 0.05}
-    ]
+    total_cost = breakfast_cost + lunch_cost + dinner_cost
     
-    # Expense categories and percentages
-    expense_categories = [
-        {"category": "Food Ingredients", "percentage": 0.6},
-        {"category": "Staff Salaries", "percentage": 0.2},
-        {"category": "Utilities", "percentage": 0.1},
-        {"category": "Maintenance", "percentage": 0.05},
-        {"category": "Miscellaneous", "percentage": 0.05}
-    ]
-    
-    # Calculate expenses (assuming expenses are 80% of revenue)
-    total_expenses = monthly_revenue * 0.8
-    
-    # Expense breakdown
-    expense_breakdown = [
-        {"category": cat["category"], "amount": total_expenses * cat["percentage"]}
-        for cat in expense_categories
-    ]
-    
-    # Generate sample transactions
-    import random
-    transactions = []
-    
-    # Expense transactions
-    for i in range(20):
-        category = random.choice(expense_categories)["category"]
-        amount = round(random.uniform(500, 5000), 2)
+    # Calculate per-student costs
+    student_costs = {}
+    for booking in filtered_bookings:
+        username = booking["user"]
+        if username not in student_costs:
+            student_costs[username] = {
+                "breakfast": 0,
+                "lunch": 0,
+                "dinner": 0,
+                "total": 0
+            }
         
-        transactions.append({
-            "date": f"{year}-{month:02d}-{random.randint(1, days_in_month):02d}",
-            "description": f"{category} - {['Payment', 'Purchase', 'Bill'][i % 3]} #{i+1}",
-            "type": "expense",
-            "category": category,
-            "amount": amount
-        })
-    
-    # Revenue transactions
-    for i in range(10):
-        category = random.choice(["Regular Meals", "Special Meals", "Extra Items"])
-        amount = round(random.uniform(5000, 20000), 2)
+        if booking["breakfast"]:
+            student_costs[username]["breakfast"] += meal_costs["breakfast"]
+            student_costs[username]["total"] += meal_costs["breakfast"]
         
-        transactions.append({
-            "date": f"{year}-{month:02d}-{random.randint(1, days_in_month):02d}",
-            "description": f"{category} - Collection #{i+1}",
-            "type": "revenue",
-            "category": category,
-            "amount": amount
-        })
+        if booking["lunch"]:
+            student_costs[username]["lunch"] += meal_costs["lunch"]
+            student_costs[username]["total"] += meal_costs["lunch"]
+        
+        if booking["dinner"]:
+            student_costs[username]["dinner"] += meal_costs["dinner"]
+            student_costs[username]["total"] += meal_costs["dinner"]
+    
+    # Get student names
+    for username in student_costs:
+        if username in fake_users_db:
+            student_costs[username]["name"] = fake_users_db[username]["name"]
+        else:
+            student_costs[username]["name"] = username
     
     return {
-        "total_revenue": monthly_revenue,
-        "total_expenses": total_expenses,
-        "revenue_breakdown": revenue_breakdown,
-        "expense_breakdown": expense_breakdown,
-        "recent_transactions": sorted(transactions, key=lambda x: x["date"], reverse=True)
+        "month": month,
+        "year": year,
+        "meal_costs": meal_costs,
+        "total_costs": {
+            "breakfast": breakfast_cost,
+            "lunch": lunch_cost,
+            "dinner": dinner_cost,
+            "total": total_cost
+        },
+        "meal_counts": {
+            "breakfast": total_breakfast_count,
+            "lunch": total_lunch_count,
+            "dinner": total_dinner_count
+        },
+        "student_costs": student_costs
     }
 
 @app.get("/reports/inventory")
@@ -758,72 +656,42 @@ async def get_inventory_report(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # In a real app, this would query inventory usage records
-    # For demo purposes, we'll generate sample data
-    
-    # Generate random usage data based on inventory
-    usage_data = []
-    total_cost = 0
-    
-    for item in inventory_db:
-        # Random usage between 10% and 50% of current quantity
-        usage_quantity = round(item["quantity"] * random.uniform(0.1, 0.5), 2)
+    # Mock inventory usage data for demonstration
+    inventory_usage = []
+    for item in inventory:
+        # Generate random usage data
+        initial_quantity = item["quantity"] * 1.2  # 20% more than current
+        used_quantity = initial_quantity - item["quantity"]
         
-        # Random cost based on category
-        if item["category"] == "Meat":
-            unit_cost = random.uniform(200, 500)
-        elif item["category"] == "Dairy":
-            unit_cost = random.uniform(50, 100)
-        elif item["category"] == "Vegetables":
-            unit_cost = random.uniform(30, 80)
-        elif item["category"] == "Fruits":
-            unit_cost = random.uniform(60, 150)
-        else:
-            unit_cost = random.uniform(40, 120)
-        
-        item_cost = usage_quantity * unit_cost
-        total_cost += item_cost
-        
-        usage_data.append({
-            "item": item["name"],
+        inventory_usage.append({
+            "name": item["name"],
             "category": item["category"],
-            "quantity": usage_quantity,
-            "unit": item["unit"],
-            "unit_cost": round(unit_cost, 2),
-            "total_cost": round(item_cost, 2)
+            "initial_quantity": initial_quantity,
+            "current_quantity": item["quantity"],
+            "used_quantity": used_quantity,
+            "unit": item["unit"]
         })
     
-    # Sort by total cost
-    usage_data = sorted(usage_data, key=lambda x: x["total_cost"], reverse=True)
-    
-    # Usage by category
-    categories = {}
-    for item in usage_data:
-        cat = item["category"]
-        if cat not in categories:
-            categories[cat] = 0
-        categories[cat] += item["total_cost"]
-    
-    usage_by_category = [
-        {"category": cat, "amount": round(amount, 2)}
-        for cat, amount in categories.items()
-    ]
-    
-    # Top used items (by cost)
-    top_items = [
-        {"item": item["item"], "amount": item["total_cost"]}
-        for item in usage_data[:8]  # Top 8 items
-    ]
+    # Group by category
+    category_usage = {}
+    for item in inventory_usage:
+        category = item["category"]
+        if category not in category_usage:
+            category_usage[category] = {
+                "used_quantity": 0,
+                "items": []
+            }
+        
+        category_usage[category]["used_quantity"] += item["used_quantity"]
+        category_usage[category]["items"].append(item["name"])
     
     return {
-        "total_items_used": len(usage_data),
-        "total_cost": round(total_cost, 2),
-        "usage_by_category": usage_by_category,
-        "top_items": top_items,
-        "details": usage_data
+        "start_date": start_date,
+        "end_date": end_date,
+        "inventory_usage": inventory_usage,
+        "category_usage": category_usage
     }
 
-# Root endpoint
 @app.get("/")
 async def root():
     return {"message": "Welcome to Hostel Mess Management System API"}

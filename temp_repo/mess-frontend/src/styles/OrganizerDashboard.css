@@ -1,0 +1,91 @@
+/* General Styles */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #5c3626;
+    color: white;
+    margin: 0;
+    }
+    
+    /* Navbar Styles */
+    .navbar {
+    background-color: #4b2e1a;
+    padding: 15px;
+    text-align: center;
+    }
+    
+    /* Dashboard Title */
+    h1 {
+    text-align: center;
+    padding-top: 20px;
+    }
+    
+    /* Message before Menu Manager */
+    .message {
+    text-align: center;
+    }
+    
+    /* Orders Summary Section */
+    .summary {
+    background-color: #794832;
+    max-width: 400px;
+    margin: 30px auto;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* Orders Summary Title */
+    .summary h2 {
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    }
+    
+    /* Button Styles */
+    .button {
+    background-color: #ff5c33;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    margin-bottom: 15px;
+    transition: background-color 0.3s ease;
+    }
+    
+    .button:hover {
+    background-color: #e55028; /* Darker shade on hover */
+    }
+    
+    /* Orders List */
+    ul {
+    list-style: none;
+    padding: 0;
+    }
+    
+    ul li {
+    margin-bottom: 5px;
+    font-size: 16px;
+    }
+    
+    /* No Orders Message */
+    .no-orders {
+    font-size: 14px;
+    }
+    
+    /* Responsive Design /
+    @media (max-width: 600px) {
+    .summary {
+    width: 90%; / Full width on small screens */
+    
+    
+    h1 {
+    font-size: 24px; /* Smaller title for mobile */
+    }
+    
+    .button {
+    width: 100%; /* Full width button */
+    }
+    

@@ -1,725 +1,1075 @@
 import streamlit as st
 import requests
+import datetime
 import json
-import pandas as pd
 from datetime import datetime, timedelta
 
-# Configuration
-BACKEND_API_URL = "http://mess-backend-service:8000"
+# API endpoint
+API_URL = "http://localhost:8000"  # Backend API URL
 
-# Page setup
+# Page configuration
 st.set_page_config(
     page_title="Hostel Mess Management System",
     page_icon="🍽️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Helper functions
+# Session state initialization
+if "token" not in st.session_state:
+    st.session_state.token = None
+if "username" not in st.session_state:
+    st.session_state.username = None
+if "role" not in st.session_state:
+    st.session_state.role = None
+if "page" not in st.session_state:
+    st.session_state.page = "login"
+
+# Helper functions for API calls
 def get_api_data(endpoint):
+    headers = {}
+    if st.session_state.token:
+        headers["Authorization"] = f"Bearer {st.session_state.token}"
+    
     try:
-        response = requests.get(f"{BACKEND_API_URL}/{endpoint}")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            st.error(f"Error fetching data: {response.status_code}")
-            return None
+        response = requests.get(f"{API_URL}{endpoint}", headers=headers)
+        return response.json()
     except Exception as e:
-        st.error(f"Connection error: {str(e)}")
+        st.error(f"Error fetching data from API: {str(e)}")
         return None
 
 def post_api_data(endpoint, data):
+    headers = {}
+    if st.session_state.token:
+        headers["Authorization"] = f"Bearer {st.session_state.token}"
+    
     try:
-        response = requests.post(
-            f"{BACKEND_API_URL}/{endpoint}",
-            json=data,
-            headers={"Content-Type": "application/json"}
-        )
-        if response.status_code in [200, 201]:
-            return response.json()
-        else:
-            st.error(f"Error submitting data: {response.status_code}")
-            return None
+        response = requests.post(f"{API_URL}{endpoint}", json=data, headers=headers)
+        return response.json()
     except Exception as e:
-        st.error(f"Connection error: {str(e)}")
+        st.error(f"Error posting data to API: {str(e)}")
         return None
 
-# Authentication
+# Login function
 def login_user():
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-        
-    if not st.session_state.logged_in:
-        st.title("Hostel Mess Management System")
-        
-        with st.form("login_form"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            
-            submit = st.form_submit_button("Login")
-            
-            if submit:
-                if username and password:
-                    # In a real application, this would validate against the backend
-                    auth_data = {"username": username, "password": password}
-                    result = post_api_data("auth/login", auth_data)
-                    
-                    if result and "access_token" in result:
-                        st.session_state.user = username
-                        st.session_state.token = result["access_token"]
-                        st.session_state.logged_in = True
-                        st.session_state.role = result.get("role", "student")
-                        st.rerun()
-                    else:
-                        st.error("Invalid credentials. Please try again.")
-                else:
-                    st.warning("Please enter both username and password.")
-                    
-        st.markdown("---")
-        st.info("If you don't have an account, please contact the mess administrator.")
-        return False
+    st.title("🍽️ Hostel Mess Management System")
+    st.subheader("Login")
     
-    return True
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        
+        if st.button("Login"):
+            if username and password:
+                # OAuth2 form data needs special handling
+                response = requests.post(
+                    f"{API_URL}/token",
+                    data={"username": username, "password": password},
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    st.session_state.token = data["access_token"]
+                    st.session_state.username = username
+                    st.session_state.role = data["role"]
+                    st.session_state.page = "dashboard" if data["role"] == "admin" else "menu"
+                    st.success("Login successful!")
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")
+            else:
+                st.warning("Please enter both username and password")
+    
+    with col2:
+        st.markdown("""
+        ### Demo Accounts
+        
+        **Admin User:**
+        - Username: admin
+        - Password: adminpassword
+        
+        **Student User:**
+        - Username: student
+        - Password: studentpassword
+        """)
+        
+        st.info("This is a demonstration system for the Hostel Mess Management System.")
 
 # Sidebar navigation
 def render_sidebar():
     st.sidebar.title("Navigation")
     
-    options = {
-        "student": ["Menu", "Meal Booking", "Feedback", "Attendance"],
-        "admin": ["Dashboard", "Menu Management", "Inventory", "Student Records", "Reports"]
-    }
+    # Profile info
+    if st.session_state.username:
+        st.sidebar.markdown(f"**Logged in as:** {st.session_state.username}")
+        st.sidebar.markdown(f"**Role:** {st.session_state.role}")
     
-    role = st.session_state.get("role", "student")
-    menu_items = options.get(role, options["student"])
-    
-    selection = st.sidebar.radio("Go to", menu_items)
-    
-    st.sidebar.markdown("---")
-    if st.sidebar.button("Logout"):
-        for key in st.session_state.keys():
-            del st.session_state[key]
-        st.rerun()
+    # Navigation based on role
+    if st.session_state.role == "admin":
+        selected_page = st.sidebar.radio(
+            "Go to:",
+            ["Dashboard", "Menu Management", "Student Records", "Inventory", "Reports", "Logout"]
+        )
         
-    return selection
+        if selected_page == "Dashboard":
+            st.session_state.page = "dashboard"
+        elif selected_page == "Menu Management":
+            st.session_state.page = "menu_management"
+        elif selected_page == "Student Records":
+            st.session_state.page = "student_records"
+        elif selected_page == "Inventory":
+            st.session_state.page = "inventory"
+        elif selected_page == "Reports":
+            st.session_state.page = "reports"
+        elif selected_page == "Logout":
+            st.session_state.token = None
+            st.session_state.username = None
+            st.session_state.role = None
+            st.session_state.page = "login"
+            st.rerun()
+    else:
+        selected_page = st.sidebar.radio(
+            "Go to:",
+            ["Weekly Menu", "Meal Booking", "My Attendance", "Feedback", "Logout"]
+        )
+        
+        if selected_page == "Weekly Menu":
+            st.session_state.page = "menu"
+        elif selected_page == "Meal Booking":
+            st.session_state.page = "booking"
+        elif selected_page == "My Attendance":
+            st.session_state.page = "attendance"
+        elif selected_page == "Feedback":
+            st.session_state.page = "feedback"
+        elif selected_page == "Logout":
+            st.session_state.token = None
+            st.session_state.username = None
+            st.session_state.role = None
+            st.session_state.page = "login"
+            st.rerun()
     
-# Student views
+    # Footer
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Hostel Mess Management System")
+    st.sidebar.caption("DevOps Implementation Project")
+
+# Page functions
 def show_menu():
-    st.title("Weekly Mess Menu")
+    st.title("🍽️ Weekly Menu")
     
-    menu_data = get_api_data("menu/weekly")
+    menu_data = get_api_data("/menu")
     
-    if not menu_data:
-        st.info("No menu data available. Please check back later.")
-        return
-    
-    # Display today's menu prominently
-    today = datetime.now().strftime("%A")
-    st.subheader(f"Today's Menu ({today})")
-    
-    today_menu = next((m for m in menu_data if m["day"].lower() == today.lower()), None)
-    
-    if today_menu:
+    if menu_data:
         col1, col2, col3 = st.columns(3)
         
-        with col1:
-            st.markdown("### Breakfast")
-            st.write(today_menu["breakfast"])
+        # Display days in three columns
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        current_day = datetime.now().strftime("%A")
+        
+        for i, day in enumerate(days):
+            if i % 3 == 0:
+                column = col1
+            elif i % 3 == 1:
+                column = col2
+            else:
+                column = col3
             
-        with col2:
-            st.markdown("### Lunch")
-            st.write(today_menu["lunch"])
-            
-        with col3:
-            st.markdown("### Dinner")
-            st.write(today_menu["dinner"])
-    else:
-        st.info("No menu available for today.")
-    
-    # Display full weekly menu
-    st.subheader("Full Weekly Menu")
-    
-    days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    sorted_menu = sorted(menu_data, key=lambda x: days_order.index(x["day"]))
-    
-    menu_df = pd.DataFrame(sorted_menu)
-    st.dataframe(menu_df[["day", "breakfast", "lunch", "dinner"]], use_container_width=True)
+            with column:
+                day_menu = next((item for item in menu_data if item["day"] == day), None)
+                if day_menu:
+                    if day == current_day:
+                        st.markdown(f"### 📅 {day} (Today)")
+                    else:
+                        st.markdown(f"### 📅 {day}")
+                    
+                    st.markdown("#### 🌅 Breakfast")
+                    st.markdown(day_menu["breakfast"])
+                    
+                    st.markdown("#### 🌞 Lunch")
+                    st.markdown(day_menu["lunch"])
+                    
+                    st.markdown("#### 🌙 Dinner")
+                    st.markdown(day_menu["dinner"])
+                    
+                    st.markdown("---")
 
 def show_meal_booking():
-    st.title("Meal Booking")
+    st.title("🍲 Meal Booking")
     
-    # Get next 7 days
-    dates = [(datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
-    date_labels = [(datetime.now() + timedelta(days=i)).strftime("%A, %b %d") for i in range(7)]
+    # Get menu data
+    menu_data = get_api_data("/menu")
     
-    selected_date_idx = st.selectbox("Select Date", range(len(dates)), format_func=lambda x: date_labels[x])
-    selected_date = dates[selected_date_idx]
+    if not menu_data:
+        st.error("Could not fetch menu data. Please try again later.")
+        return
     
-    # Get user's existing bookings
-    bookings = get_api_data(f"bookings/user/{st.session_state.user}")
+    # Date selection
+    col1, col2 = st.columns([1, 2])
     
-    existing_booking = next((b for b in bookings if b["date"] == selected_date), None) if bookings else None
-    
-    # Get menu for the selected date
-    day_of_week = (datetime.now() + timedelta(days=selected_date_idx)).strftime("%A")
-    menu_data = get_api_data("menu/weekly")
-    day_menu = next((m for m in menu_data if m["day"].lower() == day_of_week.lower()), None)
-    
-    if day_menu:
-        st.subheader(f"Menu for {date_labels[selected_date_idx]}")
+    with col1:
+        today = datetime.now().date()
+        selected_date = st.date_input(
+            "Select Date",
+            min_value=today,
+            max_value=today + timedelta(days=7),
+            value=today
+        )
         
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown("### Breakfast")
-            st.write(day_menu["breakfast"])
-            breakfast = st.checkbox("Book Breakfast", 
-                                   value=existing_booking["breakfast"] if existing_booking else False)
-            
-        with col2:
-            st.markdown("### Lunch")
-            st.write(day_menu["lunch"])
-            lunch = st.checkbox("Book Lunch", 
-                               value=existing_booking["lunch"] if existing_booking else False)
-            
-        with col3:
-            st.markdown("### Dinner")
-            st.write(day_menu["dinner"])
-            dinner = st.checkbox("Book Dinner",
-                                value=existing_booking["dinner"] if existing_booking else False)
+        # Format date for API
+        date_str = selected_date.strftime("%Y-%m-%d")
         
+        # Get existing booking for this date
+        existing_bookings = get_api_data(f"/bookings/{st.session_state.username}")
+        existing_booking = next((b for b in existing_bookings if b["date"] == date_str), None) if existing_bookings else None
+        
+        # Day of week
+        day_of_week = selected_date.strftime("%A")
+        day_menu = next((item for item in menu_data if item["day"] == day_of_week), None)
+        
+        if not day_menu:
+            st.warning(f"No menu found for {day_of_week}")
+            return
+        
+        st.subheader(f"Booking for {day_of_week}, {date_str}")
+        
+        # Meal selection checkboxes
+        breakfast = st.checkbox(
+            "Breakfast",
+            value=existing_booking["breakfast"] if existing_booking else False,
+            help=f"Menu: {day_menu['breakfast']}"
+        )
+        
+        lunch = st.checkbox(
+            "Lunch",
+            value=existing_booking["lunch"] if existing_booking else False,
+            help=f"Menu: {day_menu['lunch']}"
+        )
+        
+        dinner = st.checkbox(
+            "Dinner",
+            value=existing_booking["dinner"] if existing_booking else False,
+            help=f"Menu: {day_menu['dinner']}"
+        )
+        
+        # Save booking
         if st.button("Save Booking"):
             booking_data = {
-                "user": st.session_state.user,
-                "date": selected_date,
+                "user": st.session_state.username,
+                "date": date_str,
                 "breakfast": breakfast,
                 "lunch": lunch,
                 "dinner": dinner
             }
             
-            result = post_api_data("bookings/save", booking_data)
+            response = post_api_data("/bookings/save", booking_data)
             
-            if result:
-                st.success("Booking saved successfully!")
+            if response and "message" in response:
+                st.success(response["message"])
             else:
                 st.error("Failed to save booking. Please try again.")
-    else:
-        st.info("No menu available for the selected day.")
+    
+    with col2:
+        if day_menu:
+            st.subheader(f"Menu for {day_of_week}")
+            
+            st.markdown(f"**Breakfast:** {day_menu['breakfast']}")
+            st.markdown(f"**Lunch:** {day_menu['lunch']}")
+            st.markdown(f"**Dinner:** {day_menu['dinner']}")
+        
+        # Show all bookings
+        st.subheader("Your Bookings")
+        if existing_bookings:
+            bookings_df = []
+            for booking in existing_bookings:
+                day = datetime.strptime(booking["date"], "%Y-%m-%d").strftime("%A")
+                meals = []
+                if booking["breakfast"]:
+                    meals.append("Breakfast")
+                if booking["lunch"]:
+                    meals.append("Lunch")
+                if booking["dinner"]:
+                    meals.append("Dinner")
+                
+                bookings_df.append({
+                    "Date": booking["date"],
+                    "Day": day,
+                    "Meals": ", ".join(meals) if meals else "None"
+                })
+            
+            st.dataframe(bookings_df)
+        else:
+            st.info("You have no bookings yet.")
 
 def show_feedback():
-    st.title("Provide Feedback")
+    st.title("📝 Meal Feedback")
     
-    with st.form("feedback_form"):
-        date = st.date_input("Date", datetime.now())
-        meal = st.selectbox("Meal", ["Breakfast", "Lunch", "Dinner"])
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        # Date selection
+        today = datetime.now().date()
+        selected_date = st.date_input(
+            "Select Date",
+            max_value=today,
+            value=today
+        )
         
-        st.subheader("Rate the following:")
+        # Format date for API
+        date_str = selected_date.strftime("%Y-%m-%d")
+        
+        # Meal selection
+        meal = st.selectbox(
+            "Select Meal",
+            ["breakfast", "lunch", "dinner"]
+        )
+        
+        # Ratings
+        st.subheader("Rate the meal")
+        
         taste = st.slider("Taste", 1, 5, 3)
         quantity = st.slider("Quantity", 1, 5, 3)
-        cleanliness = st.slider("Cleanliness", 1, 5, 3)
+        hygiene = st.slider("Hygiene", 1, 5, 3)
         service = st.slider("Service", 1, 5, 3)
         
-        comments = st.text_area("Additional Comments")
+        # Comments
+        comments = st.text_area("Additional Comments", height=100)
         
-        submit = st.form_submit_button("Submit Feedback")
-        
-        if submit:
+        # Submit button
+        if st.button("Submit Feedback"):
             feedback_data = {
-                "user": st.session_state.user,
-                "date": date.strftime("%Y-%m-%d"),
-                "meal": meal.lower(),
+                "user": st.session_state.username,
+                "date": date_str,
+                "meal": meal,
                 "ratings": {
                     "taste": taste,
                     "quantity": quantity,
-                    "cleanliness": cleanliness,
+                    "hygiene": hygiene,
                     "service": service
                 },
                 "comments": comments
             }
             
-            result = post_api_data("feedback/submit", feedback_data)
+            response = post_api_data("/feedback/submit", feedback_data)
             
-            if result:
-                st.success("Thank you for your feedback!")
+            if response and "message" in response:
+                st.success(response["message"])
             else:
                 st.error("Failed to submit feedback. Please try again.")
-
-def show_attendance():
-    st.title("Meal Attendance History")
-    
-    # Get last 30 days of attendance
-    attendance_data = get_api_data(f"attendance/user/{st.session_state.user}")
-    
-    if not attendance_data:
-        st.info("No attendance data available.")
-        return
-    
-    # Summary statistics
-    total_meals = sum([
-        sum([1 for a in attendance_data if a["breakfast_attended"]]),
-        sum([1 for a in attendance_data if a["lunch_attended"]]),
-        sum([1 for a in attendance_data if a["dinner_attended"]])
-    ])
-    
-    total_booked = sum([
-        sum([1 for a in attendance_data if a["breakfast_booked"]]),
-        sum([1 for a in attendance_data if a["lunch_booked"]]),
-        sum([1 for a in attendance_data if a["dinner_booked"]])
-    ])
-    
-    attendance_rate = (total_meals / total_booked * 100) if total_booked > 0 else 0
-    
-    # Display summary
-    st.subheader("Summary")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total Meals Attended", total_meals)
     
     with col2:
-        st.metric("Total Meals Booked", total_booked)
-    
-    with col3:
-        st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
-    
-    # Detailed attendance
-    st.subheader("Detailed Attendance")
-    
-    df = pd.DataFrame(attendance_data)
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date", ascending=False)
-    
-    # Format for display
-    display_df = df.copy()
-    display_df["date"] = display_df["date"].dt.strftime("%Y-%m-%d")
-    
-    for meal in ["breakfast", "lunch", "dinner"]:
-        display_df[f"{meal}_status"] = display_df.apply(
-            lambda x: "Attended ✅" if x[f"{meal}_attended"] else 
-                     ("Missed ❌" if x[f"{meal}_booked"] else "Not Booked"),
-            axis=1
-        )
-    
-    st.dataframe(display_df[["date", "breakfast_status", "lunch_status", "dinner_status"]], 
-                use_container_width=True)
+        # Show previous feedback
+        st.subheader("Your Previous Feedback")
+        
+        user_feedback = get_api_data(f"/feedback/{st.session_state.username}")
+        
+        if user_feedback:
+            for feedback in user_feedback:
+                with st.expander(f"{feedback['date']} - {feedback['meal'].capitalize()}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Ratings:**")
+                        for category, rating in feedback["ratings"].items():
+                            st.markdown(f"- {category.capitalize()}: {'⭐' * rating}")
+                    
+                    with col2:
+                        if feedback.get("comments"):
+                            st.markdown("**Comments:**")
+                            st.markdown(feedback["comments"])
+        else:
+            st.info("You haven't submitted any feedback yet.")
 
-# Admin views
+def show_attendance():
+    st.title("📊 My Attendance")
+    
+    attendance_data = get_api_data(f"/attendance/{st.session_state.username}")
+    
+    if attendance_data:
+        # Summary statistics
+        total_meals_attended = sum(a["meals_attended"] for a in attendance_data)
+        total_meals_possible = sum(a["total_meals"] for a in attendance_data)
+        
+        # Metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            attendance_percentage = (total_meals_attended / total_meals_possible * 100) if total_meals_possible > 0 else 0
+            st.metric("Overall Attendance", f"{attendance_percentage:.1f}%")
+        
+        with col2:
+            st.metric("Meals Attended", total_meals_attended)
+        
+        with col3:
+            st.metric("Total Meals", total_meals_possible)
+        
+        # Attendance details
+        st.subheader("Attendance Details")
+        
+        attendance_df = []
+        for record in attendance_data:
+            day = datetime.strptime(record["date"], "%Y-%m-%d").strftime("%A")
+            attendance_df.append({
+                "Date": record["date"],
+                "Day": day,
+                "Meals Attended": record["meals_attended"],
+                "Breakfast": "✅" if record["details"]["breakfast"] else "❌",
+                "Lunch": "✅" if record["details"]["lunch"] else "❌",
+                "Dinner": "✅" if record["details"]["dinner"] else "❌",
+                "Percentage": f"{(record['meals_attended'] / record['total_meals'] * 100):.1f}%"
+            })
+        
+        st.dataframe(attendance_df)
+    else:
+        st.info("No attendance records found. Book meals to track your attendance.")
+
 def show_dashboard():
-    st.title("Admin Dashboard")
+    st.title("📊 Admin Dashboard")
     
-    # Get summary data
-    summary = get_api_data("admin/dashboard/summary")
+    # Get dashboard data
+    summary_data = get_api_data("/dashboard/summary")
+    attendance_data = get_api_data("/dashboard/attendance")
+    feedback_data = get_api_data("/dashboard/feedback")
     
-    if not summary:
-        st.error("Failed to load dashboard data.")
+    if not summary_data or not attendance_data or not feedback_data:
+        st.error("Could not fetch dashboard data. Please try again later.")
         return
     
-    # Display metrics
+    # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Total Students", summary["total_students"])
+        st.metric("Total Students", summary_data["student_count"])
     
     with col2:
-        st.metric("Today's Attendance", 
-                 f"{summary['today_attendance']} / {summary['today_bookings']}")
+        st.metric("Total Bookings", summary_data["booking_count"])
     
     with col3:
-        st.metric("Weekly Revenue", f"₹{summary['weekly_revenue']:,}")
+        st.metric("Feedback Received", summary_data["feedback_count"])
     
     with col4:
-        st.metric("Feedback Score", f"{summary['avg_feedback']:.1f}/5")
+        st.metric("Inventory Items", summary_data["inventory_summary"]["total_items"])
     
-    # Display charts
-    st.subheader("Weekly Attendance")
-    attendance_data = get_api_data("admin/dashboard/attendance")
+    # Today's meals
+    st.subheader("Today's Meals")
+    
+    today_meals = summary_data["today_meals"]
+    meal_col1, meal_col2, meal_col3 = st.columns(3)
+    
+    with meal_col1:
+        st.metric("Breakfast", today_meals["breakfast"])
+    
+    with meal_col2:
+        st.metric("Lunch", today_meals["lunch"])
+    
+    with meal_col3:
+        st.metric("Dinner", today_meals["dinner"])
+    
+    # Attendance trend
+    st.subheader("Attendance Trend")
     
     if attendance_data:
-        attendance_df = pd.DataFrame(attendance_data)
-        st.line_chart(attendance_df.set_index("date"))
+        # Sort by date
+        attendance_data.sort(key=lambda x: x["date"])
+        
+        # Prepare data for chart
+        dates = [record["date"] for record in attendance_data]
+        breakfast_counts = [record["breakfast"] for record in attendance_data]
+        lunch_counts = [record["lunch"] for record in attendance_data]
+        dinner_counts = [record["dinner"] for record in attendance_data]
+        
+        # Display as a bar chart
+        attendance_chart_data = {
+            "Date": dates,
+            "Breakfast": breakfast_counts,
+            "Lunch": lunch_counts,
+            "Dinner": dinner_counts
+        }
+        
+        st.bar_chart(attendance_chart_data)
+    else:
+        st.info("No attendance data available")
     
-    # Feedback overview
-    st.subheader("Recent Feedback")
-    feedback_data = get_api_data("admin/dashboard/feedback")
+    # Feedback summary
+    st.subheader("Feedback Summary")
     
-    if feedback_data:
-        feedback_df = pd.DataFrame(feedback_data)
-        st.dataframe(feedback_df, use_container_width=True)
+    feedback_col1, feedback_col2 = st.columns([2, 1])
+    
+    with feedback_col1:
+        # Average ratings
+        avg_ratings = feedback_data["average_ratings"]
+        
+        if avg_ratings:
+            # Prepare data for radar chart or display as table
+            categories = ["taste", "quantity", "hygiene", "service"]
+            
+            # Display as table for now
+            ratings_data = []
+            for meal, ratings in avg_ratings.items():
+                row = {"Meal": meal.capitalize()}
+                for category in categories:
+                    row[category.capitalize()] = f"{ratings[category]:.1f}/5"
+                ratings_data.append(row)
+            
+            st.dataframe(ratings_data)
+    
+    with feedback_col2:
+        # Recent comments
+        st.markdown("**Recent Comments**")
+        
+        recent_comments = feedback_data["recent_comments"]
+        
+        if recent_comments:
+            for comment in recent_comments:
+                with st.expander(f"{comment['date']} - {comment['meal'].capitalize()}"):
+                    st.markdown(f"**User:** {comment['user']}")
+                    st.markdown(comment['comment'])
+        else:
+            st.info("No comments available")
 
 def show_menu_management():
-    st.title("Menu Management")
+    st.title("🍽️ Menu Management")
     
     # Get current menu
-    menu_data = get_api_data("menu/weekly")
+    menu_data = get_api_data("/menu")
     
     if not menu_data:
-        menu_data = []
+        st.error("Could not fetch menu data. Please try again later.")
+        return
     
+    # Day selection
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    
-    # Convert to dict for easier access
-    menu_dict = {item["day"]: item for item in menu_data}
-    
-    st.subheader("Edit Weekly Menu")
-    
     selected_day = st.selectbox("Select Day", days)
     
-    current_menu = menu_dict.get(selected_day, {
-        "day": selected_day,
-        "breakfast": "",
-        "lunch": "",
-        "dinner": ""
-    })
+    # Get current menu for selected day
+    day_menu = next((item for item in menu_data if item["day"] == selected_day), None)
     
-    with st.form(f"menu_form_{selected_day}"):
-        breakfast = st.text_area("Breakfast", current_menu.get("breakfast", ""))
-        lunch = st.text_area("Lunch", current_menu.get("lunch", ""))
-        dinner = st.text_area("Dinner", current_menu.get("dinner", ""))
+    # Form for editing menu
+    with st.form("menu_form"):
+        st.subheader(f"Edit Menu for {selected_day}")
         
-        submit = st.form_submit_button("Save Menu")
+        breakfast = st.text_area(
+            "Breakfast",
+            value=day_menu["breakfast"] if day_menu else "",
+            height=100
+        )
         
-        if submit:
-            updated_menu = {
+        lunch = st.text_area(
+            "Lunch",
+            value=day_menu["lunch"] if day_menu else "",
+            height=100
+        )
+        
+        dinner = st.text_area(
+            "Dinner",
+            value=day_menu["dinner"] if day_menu else "",
+            height=100
+        )
+        
+        submit_button = st.form_submit_button("Update Menu")
+        
+        if submit_button:
+            menu_update = {
                 "day": selected_day,
                 "breakfast": breakfast,
                 "lunch": lunch,
                 "dinner": dinner
             }
             
-            result = post_api_data("menu/update", updated_menu)
+            response = post_api_data("/menu/update", menu_update)
             
-            if result:
-                st.success(f"Menu for {selected_day} updated successfully!")
+            if response and "message" in response:
+                st.success(response["message"])
             else:
                 st.error("Failed to update menu. Please try again.")
+    
+    # Display current menu
+    st.subheader("Current Weekly Menu")
+    
+    # Use columns to display the menu by day
+    cols = st.columns(7)
+    
+    for i, day in enumerate(days):
+        day_menu = next((item for item in menu_data if item["day"] == day), None)
+        
+        if day_menu:
+            with cols[i]:
+                st.markdown(f"**{day}**")
+                st.markdown(f"*Breakfast:* {day_menu['breakfast'][:50]}...")
+                st.markdown(f"*Lunch:* {day_menu['lunch'][:50]}...")
+                st.markdown(f"*Dinner:* {day_menu['dinner'][:50]}...")
 
 def show_inventory():
-    st.title("Inventory Management")
+    st.title("📦 Inventory Management")
     
-    # Get current inventory
-    inventory_data = get_api_data("inventory/all")
+    # Get inventory data
+    inventory_data = get_api_data("/inventory")
     
     if not inventory_data:
-        st.info("No inventory data available.")
-        inventory_data = []
-    
-    # Display current inventory
-    st.subheader("Current Inventory")
-    
-    inventory_df = pd.DataFrame(inventory_data)
-    st.dataframe(inventory_df, use_container_width=True)
-    
-    # Add new item
-    st.subheader("Add/Update Item")
-    
-    with st.form("inventory_form"):
-        item_name = st.text_input("Item Name")
-        quantity = st.number_input("Quantity", min_value=0)
-        unit = st.selectbox("Unit", ["kg", "liters", "packets", "boxes", "units"])
-        category = st.selectbox("Category", ["Vegetables", "Fruits", "Grains", "Dairy", "Meat", "Spices", "Other"])
-        
-        submit = st.form_submit_button("Save Item")
-        
-        if submit:
-            if not item_name:
-                st.error("Item name is required.")
-            else:
-                inventory_item = {
-                    "name": item_name,
-                    "quantity": quantity,
-                    "unit": unit,
-                    "category": category
-                }
-                
-                result = post_api_data("inventory/update", inventory_item)
-                
-                if result:
-                    st.success(f"Inventory updated successfully!")
-                else:
-                    st.error("Failed to update inventory. Please try again.")
-
-def show_student_records():
-    st.title("Student Records")
-    
-    # Get all students
-    students_data = get_api_data("admin/students")
-    
-    if not students_data:
-        st.info("No student records available.")
+        st.error("Could not fetch inventory data. Please try again later.")
         return
     
-    # Display students
-    st.subheader("All Students")
+    # Add new item section
+    st.subheader("Add/Update Inventory Item")
     
-    students_df = pd.DataFrame(students_data)
-    st.dataframe(students_df, use_container_width=True)
+    col1, col2 = st.columns([1, 1])
     
-    # Add/Edit student
+    with col1:
+        with st.form("inventory_form"):
+            name = st.text_input("Item Name")
+            quantity = st.number_input("Quantity", min_value=0.0, step=0.1)
+            unit = st.selectbox("Unit", ["kg", "gram", "liter", "piece", "packet"])
+            category = st.selectbox("Category", ["Grains", "Dairy", "Vegetables", "Fruits", "Meat", "Oils", "Spices", "Other"])
+            
+            submit_button = st.form_submit_button("Save Item")
+            
+            if submit_button:
+                if not name:
+                    st.error("Item name is required")
+                else:
+                    inventory_item = {
+                        "name": name,
+                        "quantity": quantity,
+                        "unit": unit,
+                        "category": category
+                    }
+                    
+                    response = post_api_data("/inventory/update", inventory_item)
+                    
+                    if response and "message" in response:
+                        st.success(response["message"])
+                    else:
+                        st.error("Failed to update inventory. Please try again.")
+    
+    with col2:
+        # Quick update for existing items
+        if inventory_data:
+            st.subheader("Quick Update")
+            
+            # Select item
+            item_names = [item["name"] for item in inventory_data]
+            selected_item = st.selectbox("Select Item", item_names)
+            
+            # Get selected item details
+            item = next((i for i in inventory_data if i["name"] == selected_item), None)
+            
+            if item:
+                # Show current quantity
+                current_quantity = st.number_input(
+                    f"Current Quantity ({item['unit']})",
+                    value=item["quantity"],
+                    step=0.1
+                )
+                
+                # Add or remove quantity
+                adjust_quantity = st.number_input(
+                    "Adjust Quantity (+ or -)",
+                    step=0.1
+                )
+                
+                if st.button("Update Quantity"):
+                    new_quantity = current_quantity + adjust_quantity
+                    
+                    if new_quantity < 0:
+                        st.error("Quantity cannot be negative")
+                    else:
+                        inventory_item = {
+                            "name": item["name"],
+                            "quantity": new_quantity,
+                            "unit": item["unit"],
+                            "category": item["category"]
+                        }
+                        
+                        response = post_api_data("/inventory/update", inventory_item)
+                        
+                        if response and "message" in response:
+                            st.success(response["message"])
+                        else:
+                            st.error("Failed to update inventory. Please try again.")
+    
+    # Display inventory
+    st.subheader("Current Inventory")
+    
+    # Group by category
+    categories = {}
+    for item in inventory_data:
+        cat = item["category"]
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append(item)
+    
+    # Display by category
+    for category, items in categories.items():
+        with st.expander(f"{category} ({len(items)} items)"):
+            # Create a dataframe for display
+            items_df = []
+            for item in items:
+                items_df.append({
+                    "Name": item["name"],
+                    "Quantity": f"{item['quantity']} {item['unit']}",
+                    "Category": item["category"]
+                })
+            
+            st.dataframe(items_df)
+
+def show_student_records():
+    st.title("👨‍🎓 Student Records")
+    
+    # Get student data
+    students_data = get_api_data("/students")
+    
+    if not students_data:
+        st.error("Could not fetch student data. Please try again later.")
+        return
+    
+    # Add/edit student section
     st.subheader("Add/Edit Student")
     
-    with st.form("student_form"):
-        username = st.text_input("Username")
-        name = st.text_input("Full Name")
-        room_number = st.text_input("Room Number")
-        email = st.text_input("Email")
-        phone = st.text_input("Phone")
-        password = st.text_input("Password (leave blank to keep unchanged)", type="password")
-        
-        submit = st.form_submit_button("Save Student")
-        
-        if submit:
-            if not username or not name:
-                st.error("Username and Full Name are required.")
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        with st.form("student_form"):
+            # New student flag
+            is_new = st.checkbox("Add New Student")
+            
+            # If editing, select student
+            if not is_new and students_data:
+                student_usernames = [s["username"] for s in students_data]
+                username = st.selectbox("Select Student", student_usernames)
+                selected_student = next((s for s in students_data if s["username"] == username), None)
             else:
-                student_data = {
-                    "username": username,
-                    "name": name,
-                    "room_number": room_number,
-                    "email": email,
-                    "phone": phone
-                }
-                
-                if password:
-                    student_data["password"] = password
-                
-                result = post_api_data("admin/students/update", student_data)
-                
-                if result:
-                    st.success(f"Student information updated successfully!")
+                username = st.text_input("Username")
+                selected_student = None
+            
+            # Form fields
+            name = st.text_input("Name", value=selected_student["name"] if selected_student else "")
+            email = st.text_input("Email", value=selected_student["email"] if selected_student else "")
+            phone = st.text_input("Phone", value=selected_student["phone"] if selected_student else "")
+            room_number = st.text_input("Room Number", value=selected_student["room_number"] if selected_student else "")
+            
+            # Password field for new students
+            if is_new:
+                password = st.text_input("Password", type="password")
+            else:
+                password = st.text_input("New Password (leave blank to keep current)", type="password")
+            
+            submit_button = st.form_submit_button("Save Student")
+            
+            if submit_button:
+                if is_new and not username:
+                    st.error("Username is required for new students")
+                elif is_new and not password:
+                    st.error("Password is required for new students")
                 else:
-                    st.error("Failed to update student information. Please try again.")
+                    student_data = {
+                        "username": username,
+                        "name": name,
+                        "email": email,
+                        "phone": phone,
+                        "room_number": room_number,
+                    }
+                    
+                    if password:
+                        student_data["password"] = password
+                    
+                    response = post_api_data("/students/update", student_data)
+                    
+                    if response and "message" in response:
+                        st.success(response["message"])
+                    else:
+                        st.error("Failed to update student. Please try again.")
+    
+    with col2:
+        # Quick view of student details
+        if students_data and not is_new:
+            if selected_student:
+                st.subheader("Student Details")
+                
+                st.markdown(f"**Username:** {selected_student['username']}")
+                st.markdown(f"**Name:** {selected_student['name']}")
+                st.markdown(f"**Email:** {selected_student['email']}")
+                st.markdown(f"**Phone:** {selected_student['phone']}")
+                st.markdown(f"**Room:** {selected_student['room_number']}")
+    
+    # Display all students
+    st.subheader("All Students")
+    
+    if students_data:
+        # Create a dataframe for display
+        students_df = []
+        for student in students_data:
+            students_df.append({
+                "Username": student["username"],
+                "Name": student["name"],
+                "Email": student["email"],
+                "Phone": student["phone"],
+                "Room": student["room_number"]
+            })
+        
+        st.dataframe(students_df)
+    else:
+        st.info("No students found")
 
 def show_reports():
-    st.title("Reports")
+    st.title("📈 Reports")
     
+    # Report types
     report_type = st.selectbox(
         "Select Report Type",
         ["Attendance Report", "Feedback Report", "Financial Report", "Inventory Usage Report"]
     )
     
     if report_type == "Attendance Report":
-        st.subheader("Attendance Report")
-        
         # Date range selection
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30))
+            start_date = st.date_input("Start Date", value=datetime.now().date() - timedelta(days=7))
         with col2:
-            end_date = st.date_input("End Date", datetime.now())
+            end_date = st.date_input("End Date", value=datetime.now().date())
         
-        if start_date > end_date:
-            st.error("Start date must be before end date")
-            return
+        # Format dates for API
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
         
-        # Get attendance data
-        params = {
-            "start_date": start_date.strftime("%Y-%m-%d"),
-            "end_date": end_date.strftime("%Y-%m-%d")
-        }
-        
-        attendance_data = get_api_data(f"reports/attendance?start_date={params['start_date']}&end_date={params['end_date']}")
-        
-        if not attendance_data:
-            st.info("No attendance data available for the selected period.")
-            return
-        
-        # Summary statistics
-        total_bookings = attendance_data["total_bookings"]
-        total_attended = attendance_data["total_attended"]
-        attendance_rate = (total_attended / total_bookings * 100) if total_bookings > 0 else 0
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Bookings", total_bookings)
-        with col2:
-            st.metric("Total Attended", total_attended)
-        with col3:
-            st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
-        
-        # Daily attendance chart
-        st.subheader("Daily Attendance")
-        daily_df = pd.DataFrame(attendance_data["daily"])
-        st.line_chart(daily_df.set_index("date"))
-        
-        # Detailed data
-        st.subheader("Detailed Data")
-        st.dataframe(pd.DataFrame(attendance_data["details"]), use_container_width=True)
-        
+        # Generate report button
+        if st.button("Generate Report"):
+            report_data = get_api_data(f"/reports/attendance?start_date={start_date_str}&end_date={end_date_str}")
+            
+            if report_data:
+                st.subheader(f"Attendance Report: {start_date_str} to {end_date_str}")
+                
+                # Summary statistics
+                total_students = len(report_data["student_attendance"])
+                total_meals = sum(data["total_meals"] for data in report_data["student_attendance"].values())
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Students", total_students)
+                with col2:
+                    st.metric("Total Meals Served", total_meals)
+                
+                # Student attendance table
+                st.subheader("Student Attendance Details")
+                
+                attendance_df = []
+                for username, data in report_data["student_attendance"].items():
+                    attendance_df.append({
+                        "Student": data.get("name", username),
+                        "Total Meals": data["total_meals"],
+                        "Breakfast": data["meals_attended"]["breakfast"],
+                        "Lunch": data["meals_attended"]["lunch"],
+                        "Dinner": data["meals_attended"]["dinner"]
+                    })
+                
+                st.dataframe(attendance_df)
+            else:
+                st.error("Failed to generate report. Please try again.")
+    
     elif report_type == "Feedback Report":
-        st.subheader("Feedback Report")
-        
         # Date range selection
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30))
+            start_date = st.date_input("Start Date", value=datetime.now().date() - timedelta(days=7))
         with col2:
-            end_date = st.date_input("End Date", datetime.now())
+            end_date = st.date_input("End Date", value=datetime.now().date())
         
-        if start_date > end_date:
-            st.error("Start date must be before end date")
-            return
+        # Format dates for API
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
         
-        # Get feedback data
-        params = {
-            "start_date": start_date.strftime("%Y-%m-%d"),
-            "end_date": end_date.strftime("%Y-%m-%d")
-        }
-        
-        feedback_data = get_api_data(f"reports/feedback?start_date={params['start_date']}&end_date={params['end_date']}")
-        
-        if not feedback_data:
-            st.info("No feedback data available for the selected period.")
-            return
-        
-        # Average ratings
-        avg_ratings = feedback_data["average_ratings"]
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Taste", f"{avg_ratings['taste']:.1f}/5")
-        with col2:
-            st.metric("Quantity", f"{avg_ratings['quantity']:.1f}/5")
-        with col3:
-            st.metric("Cleanliness", f"{avg_ratings['cleanliness']:.1f}/5")
-        with col4:
-            st.metric("Service", f"{avg_ratings['service']:.1f}/5")
-        
-        # Feedback by meal
-        st.subheader("Feedback by Meal")
-        meal_df = pd.DataFrame(feedback_data["by_meal"])
-        st.bar_chart(meal_df.set_index("meal"))
-        
-        # Recent comments
-        st.subheader("Recent Comments")
-        comments_df = pd.DataFrame(feedback_data["recent_comments"])
-        st.dataframe(comments_df, use_container_width=True)
-        
+        # Generate report button
+        if st.button("Generate Report"):
+            report_data = get_api_data(f"/reports/feedback?start_date={start_date_str}&end_date={end_date_str}")
+            
+            if report_data:
+                st.subheader(f"Feedback Report: {start_date_str} to {end_date_str}")
+                
+                # Average ratings
+                st.subheader("Average Ratings by Meal")
+                
+                avg_ratings = report_data["average_ratings"]
+                
+                if avg_ratings:
+                    # Display as table
+                    ratings_df = []
+                    for meal, ratings in avg_ratings.items():
+                        ratings_df.append({
+                            "Meal": meal.capitalize(),
+                            "Taste": f"{ratings['taste']:.1f}/5",
+                            "Quantity": f"{ratings['quantity']:.1f}/5",
+                            "Hygiene": f"{ratings['hygiene']:.1f}/5",
+                            "Service": f"{ratings['service']:.1f}/5",
+                            "Overall": f"{(sum(ratings.values()) / len(ratings)):.1f}/5"
+                        })
+                    
+                    st.dataframe(ratings_df)
+                
+                # Comments
+                st.subheader("Feedback Comments")
+                
+                comments = report_data["comments"]
+                
+                if comments:
+                    for comment in comments:
+                        with st.expander(f"{comment['date']} - {comment['meal'].capitalize()} - {comment['user']}"):
+                            st.markdown(comment["comment"])
+                else:
+                    st.info("No comments in the selected date range")
+            else:
+                st.error("Failed to generate report. Please try again.")
+    
     elif report_type == "Financial Report":
-        st.subheader("Financial Report")
-        
-        # Month selection
-        months = [
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        ]
-        current_month = datetime.now().month - 1  # 0-based index
-        current_year = datetime.now().year
-        
+        # Month and year selection
         col1, col2 = st.columns(2)
         with col1:
-            selected_month = st.selectbox("Month", range(len(months)), index=current_month, format_func=lambda x: months[x])
+            month = st.selectbox(
+                "Select Month",
+                [(i, datetime(2023, i, 1).strftime("%B")) for i in range(1, 13)],
+                format_func=lambda x: x[1]
+            )
         with col2:
-            selected_year = st.selectbox("Year", range(current_year-2, current_year+1), index=2)
+            year = st.selectbox(
+                "Select Year",
+                list(range(2020, datetime.now().year + 1))
+            )
         
-        # Get financial data
-        params = {
-            "month": selected_month + 1,  # 1-based for API
-            "year": selected_year
-        }
-        
-        financial_data = get_api_data(f"reports/financial?month={params['month']}&year={params['year']}")
-        
-        if not financial_data:
-            st.info("No financial data available for the selected period.")
-            return
-        
-        # Summary metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Revenue", f"₹{financial_data['total_revenue']:,}")
-        with col2:
-            st.metric("Total Expenses", f"₹{financial_data['total_expenses']:,}")
-        with col3:
-            profit = financial_data['total_revenue'] - financial_data['total_expenses']
-            st.metric("Profit/Loss", f"₹{profit:,}", delta=f"₹{profit:,}")
-        
-        # Revenue breakdown
-        st.subheader("Revenue Breakdown")
-        revenue_df = pd.DataFrame(financial_data["revenue_breakdown"])
-        st.bar_chart(revenue_df.set_index("category"))
-        
-        # Expense breakdown
-        st.subheader("Expense Breakdown")
-        expense_df = pd.DataFrame(financial_data["expense_breakdown"])
-        st.bar_chart(expense_df.set_index("category"))
-        
-        # Detailed transactions
-        st.subheader("Recent Transactions")
-        transactions_df = pd.DataFrame(financial_data["recent_transactions"])
-        st.dataframe(transactions_df, use_container_width=True)
-        
+        # Generate report button
+        if st.button("Generate Report"):
+            report_data = get_api_data(f"/reports/financial?month={month[0]}&year={year}")
+            
+            if report_data:
+                st.subheader(f"Financial Report: {month[1]} {year}")
+                
+                # Cost metrics
+                total_costs = report_data["total_costs"]
+                meal_counts = report_data["meal_counts"]
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Cost", f"₹{total_costs['total']:.2f}")
+                with col2:
+                    st.metric("Total Meals", sum(meal_counts.values()))
+                with col3:
+                    avg_cost_per_meal = total_costs["total"] / sum(meal_counts.values()) if sum(meal_counts.values()) > 0 else 0
+                    st.metric("Avg. Cost Per Meal", f"₹{avg_cost_per_meal:.2f}")
+                
+                # Meal-wise costs
+                st.subheader("Meal-wise Costs")
+                
+                meal_costs_df = []
+                for meal in ["breakfast", "lunch", "dinner"]:
+                    meal_costs_df.append({
+                        "Meal": meal.capitalize(),
+                        "Cost Per Meal": f"₹{report_data['meal_costs'][meal]:.2f}",
+                        "Number of Meals": meal_counts[meal],
+                        "Total Cost": f"₹{total_costs[meal]:.2f}"
+                    })
+                
+                st.dataframe(meal_costs_df)
+                
+                # Student-wise costs
+                st.subheader("Student-wise Costs")
+                
+                student_costs_df = []
+                for username, data in report_data["student_costs"].items():
+                    student_costs_df.append({
+                        "Student": data.get("name", username),
+                        "Breakfast Cost": f"₹{data['breakfast']:.2f}",
+                        "Lunch Cost": f"₹{data['lunch']:.2f}",
+                        "Dinner Cost": f"₹{data['dinner']:.2f}",
+                        "Total Cost": f"₹{data['total']:.2f}"
+                    })
+                
+                st.dataframe(student_costs_df)
+            else:
+                st.error("Failed to generate report. Please try again.")
+    
     elif report_type == "Inventory Usage Report":
-        st.subheader("Inventory Usage Report")
-        
         # Date range selection
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30))
+            start_date = st.date_input("Start Date", value=datetime.now().date() - timedelta(days=7))
         with col2:
-            end_date = st.date_input("End Date", datetime.now())
+            end_date = st.date_input("End Date", value=datetime.now().date())
         
-        if start_date > end_date:
-            st.error("Start date must be before end date")
-            return
+        # Format dates for API
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
         
-        # Get inventory usage data
-        params = {
-            "start_date": start_date.strftime("%Y-%m-%d"),
-            "end_date": end_date.strftime("%Y-%m-%d")
-        }
-        
-        inventory_data = get_api_data(f"reports/inventory?start_date={params['start_date']}&end_date={params['end_date']}")
-        
-        if not inventory_data:
-            st.info("No inventory usage data available for the selected period.")
-            return
-        
-        # Summary metrics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Items Used", inventory_data["total_items_used"])
-        with col2:
-            st.metric("Total Cost", f"₹{inventory_data['total_cost']:,}")
-        
-        # Usage by category
-        st.subheader("Usage by Category")
-        category_df = pd.DataFrame(inventory_data["usage_by_category"])
-        st.bar_chart(category_df.set_index("category"))
-        
-        # Top used items
-        st.subheader("Top Used Items")
-        top_items_df = pd.DataFrame(inventory_data["top_items"])
-        st.bar_chart(top_items_df.set_index("item"))
-        
-        # Detailed usage
-        st.subheader("Detailed Usage")
-        details_df = pd.DataFrame(inventory_data["details"])
-        st.dataframe(details_df, use_container_width=True)
+        # Generate report button
+        if st.button("Generate Report"):
+            report_data = get_api_data(f"/reports/inventory?start_date={start_date_str}&end_date={end_date_str}")
+            
+            if report_data:
+                st.subheader(f"Inventory Usage Report: {start_date_str} to {end_date_str}")
+                
+                # Category usage
+                st.subheader("Usage by Category")
+                
+                category_usage = report_data["category_usage"]
+                
+                category_df = []
+                for category, data in category_usage.items():
+                    category_df.append({
+                        "Category": category,
+                        "Used Quantity": f"{data['used_quantity']:.1f}",
+                        "Items": ", ".join(data["items"])
+                    })
+                
+                st.dataframe(category_df)
+                
+                # Item usage
+                st.subheader("Item-wise Usage")
+                
+                inventory_usage = report_data["inventory_usage"]
+                
+                inventory_df = []
+                for item in inventory_usage:
+                    inventory_df.append({
+                        "Item": item["name"],
+                        "Category": item["category"],
+                        "Initial Quantity": f"{item['initial_quantity']} {item['unit']}",
+                        "Current Quantity": f"{item['current_quantity']} {item['unit']}",
+                        "Used Quantity": f"{item['used_quantity']} {item['unit']}",
+                        "Usage %": f"{(item['used_quantity'] / item['initial_quantity'] * 100):.1f}%"
+                    })
+                
+                st.dataframe(inventory_df)
+            else:
+                st.error("Failed to generate report. Please try again.")
 
-# Main app logic
+# Main function
 def main():
-    if login_user():
-        page = render_sidebar()
+    # Check if logged in
+    if not st.session_state.token:
+        login_user()
+    else:
+        # Render sidebar
+        render_sidebar()
         
-        # Route to appropriate page based on selection and role
-        if st.session_state.role == "student":
-            if page == "Menu":
-                show_menu()
-            elif page == "Meal Booking":
-                show_meal_booking()
-            elif page == "Feedback":
-                show_feedback()
-            elif page == "Attendance":
-                show_attendance()
-        else:  # admin role
-            if page == "Dashboard":
-                show_dashboard()
-            elif page == "Menu Management":
-                show_menu_management()
-            elif page == "Inventory":
-                show_inventory()
-            elif page == "Student Records":
-                show_student_records()
-            elif page == "Reports":
-                show_reports()
+        # Render appropriate page
+        if st.session_state.page == "menu":
+            show_menu()
+        elif st.session_state.page == "booking":
+            show_meal_booking()
+        elif st.session_state.page == "attendance":
+            show_attendance()
+        elif st.session_state.page == "feedback":
+            show_feedback()
+        elif st.session_state.page == "dashboard":
+            show_dashboard()
+        elif st.session_state.page == "menu_management":
+            show_menu_management()
+        elif st.session_state.page == "inventory":
+            show_inventory()
+        elif st.session_state.page == "student_records":
+            show_student_records()
+        elif st.session_state.page == "reports":
+            show_reports()
+        elif st.session_state.page == "login":
+            login_user()
 
 if __name__ == "__main__":
     main()
