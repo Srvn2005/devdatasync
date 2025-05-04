@@ -35,6 +35,48 @@ jobs:
         with:
           file: ./mess-backend/coverage.xml
           fail_ci_if_error: true
+          
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety
+          
+      - name: Run Bandit (Python Security Scanner)
+        run: |
+          bandit -r mess-backend/ -f json -o bandit-results.json || true
+          
+      - name: Run Safety (Dependency Checker)
+        run: |
+          safety check --full-report --output json > safety-results.json || true
+          
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v2
+        with:
+          name: security-scan-results
+          path: |
+            bandit-results.json
+            safety-results.json
+            
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
 
   build-and-push:
     name: Build and Push
@@ -121,12 +163,15 @@ jobs:
           envsubst < kubernetes/frontend-deployment.yml | kubectl apply -f -
           kubectl apply -f kubernetes/frontend-service.yml
           kubectl apply -f kubernetes/monitoring-deployment.yml
+          kubectl apply -f kubernetes/logging-deployment.yml
           
           # Wait for deployments to complete
           kubectl rollout status deployment/mess-backend
           kubectl rollout status deployment/mess-frontend
           kubectl rollout status deployment/prometheus
           kubectl rollout status deployment/grafana
+          kubectl rollout status deployment/elasticsearch
+          kubectl rollout status deployment/kibana
           
           # Get the external URL
           echo "Application deployed! Frontend is available at:"
