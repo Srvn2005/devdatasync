@@ -1,25 +1,25 @@
 ---
 all:
   children:
-    kubernetes:
-      children:
-        master:
-          hosts:
-            master:
-              ansible_host: "{{ master_ip }}"
-              ansible_user: ec2-user
-              ansible_ssh_private_key_file: "{{ ssh_key_file }}"
-        nodes:
-          hosts:
-            node1:
-              ansible_host: "{{ node1_ip }}"
-              ansible_user: ec2-user
-              ansible_ssh_private_key_file: "{{ ssh_key_file }}"
-            node2:
-              ansible_host: "{{ node2_ip }}"
-              ansible_user: ec2-user
-              ansible_ssh_private_key_file: "{{ ssh_key_file }}"
-    local:
+    eks_workers:
       hosts:
-        localhost:
-          ansible_connection: local
+        worker1:
+          ansible_host: worker1.example.com
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+        worker2:
+          ansible_host: worker2.example.com
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+    ec2_instances:
+      hosts:
+        instance1:
+          ansible_host: instance1.example.com
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+        instance2:
+          ansible_host: instance2.example.com
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+  vars:
+    ansible_python_interpreter: /usr/bin/python3

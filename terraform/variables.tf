@@ -1,47 +1,47 @@
-variable "aws_region" {
-  description = "AWS region for all resources"
-  type        = string
+variable "region" {
+  description = "AWS region to deploy resources"
   default     = "us-east-1"
-}
-
-variable "environment" {
-  description = "Environment name (dev, staging, prod)"
   type        = string
-  default     = "dev"
-}
-
-variable "app_name" {
-  description = "Application name"
-  type        = string
-  default     = "mess-management"
 }
 
 variable "vpc_cidr" {
-  description = "CIDR block for VPC"
-  type        = string
+  description = "CIDR block for the VPC"
   default     = "10.0.0.0/16"
-}
-
-variable "eks_instance_type" {
-  description = "EC2 instance type for EKS nodes"
   type        = string
-  default     = "t3.medium"
 }
 
-variable "eks_desired_capacity" {
-  description = "Desired number of worker nodes"
+variable "availability_zones" {
+  description = "List of availability zones"
+  default     = ["us-east-1a", "us-east-1b", "us-east-1c"]
+  type        = list(string)
+}
+
+variable "node_instance_types" {
+  description = "EC2 instance types for EKS node group"
+  default     = ["t3.medium"]
+  type        = list(string)
+}
+
+variable "node_disk_size" {
+  description = "Disk size for EKS nodes in GB"
+  default     = 20
   type        = number
+}
+
+variable "node_desired_capacity" {
+  description = "Desired number of nodes in the EKS node group"
   default     = 2
+  type        = number
 }
 
-variable "eks_max_size" {
-  description = "Maximum number of worker nodes"
-  type        = number
+variable "node_max_capacity" {
+  description = "Maximum number of nodes in the EKS node group"
   default     = 4
+  type        = number
 }
 
-variable "eks_min_size" {
-  description = "Minimum number of worker nodes"
+variable "node_min_capacity" {
+  description = "Minimum number of nodes in the EKS node group"
+  default     = 2
   type        = number
-  default     = 1
 }

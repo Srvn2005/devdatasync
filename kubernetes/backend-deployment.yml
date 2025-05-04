@@ -9,54 +9,35 @@ spec:
   selector:
     matchLabels:
       app: mess-backend
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: mess-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
     spec:
       containers:
       - name: mess-backend
         image: ${ECR_REPOSITORY_URI}/mess-backend:latest
-        imagePullPolicy: Always
         ports:
         - containerPort: 8000
         resources:
-          requests:
-            cpu: "200m"
-            memory: "256Mi"
           limits:
-            cpu: "500m"
+            cpu: "0.5"
             memory: "512Mi"
+          requests:
+            cpu: "0.2"
+            memory: "256Mi"
         livenessProbe:
           httpGet:
             path: /
             port: 8000
           initialDelaySeconds: 30
           periodSeconds: 10
-          timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /
             port: 8000
           initialDelaySeconds: 5
           periodSeconds: 5
-        env:
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: mess-secrets
-              key: secret-key
-      restartPolicy: Always
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: mess-secrets
-type: Opaque
-data:
-  secret-key: eW91ci1zZWNyZXQta2V5LWZvci1qd3Q= # Base64 encoded "your-secret-key-for-jwt"

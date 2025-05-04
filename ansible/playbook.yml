@@ -1,100 +1,145 @@
 ---
-- name: Setup Kubernetes environment
-  hosts: all
+# Ansible playbook for configuring and deploying the Hostel Mess Management System
+- name: Setup Kubernetes environment and deploy applications
+  hosts: eks_workers
   become: true
+  gather_facts: true
   vars:
-    kubeconfig: "{{ lookup('env', 'KUBECONFIG') }}"
+    aws_region: "{{ lookup('env', 'AWS_REGION') }}"
+    ecr_repository_uri: "{{ lookup('env', 'ECR_REPOSITORY_URI') }}"
+  
   tasks:
-    - name: Install Docker
-      yum:
-        name: docker
+    - name: Ensure required packages are installed
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - python3-pip
         state: present
-      when: inventory_hostname != 'localhost'
+        update_cache: yes
+      when: ansible_os_family == "Debian"
 
-    - name: Start and enable Docker service
-      systemd:
-        name: docker
-        state: started
-        enabled: yes
-      when: inventory_hostname != 'localhost'
+    - name: Install AWS CLI
+      pip:
+        name: awscli
+        state: present
 
     - name: Install kubectl
       get_url:
-        url: https://storage.googleapis.com/kubernetes-release/release/v1.23.0/bin/linux/amd64/kubectl
+        url: https://storage.googleapis.com/kubernetes-release/release/v1.24.0/bin/linux/amd64/kubectl
         dest: /usr/local/bin/kubectl
         mode: '0755'
-      when: inventory_hostname == 'localhost'
 
-    - name: Add Kubernetes repository
-      yum_repository:
-        name: kubernetes
-        description: Kubernetes
-        baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
-        gpgcheck: yes
-        gpgkey: https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
-        enabled: yes
-      when: inventory_hostname != 'localhost'
+    - name: Update kubeconfig for EKS
+      shell: aws eks update-kubeconfig --name mess-management-cluster --region {{ aws_region }}
+      args:
+        creates: ~/.kube/config
 
-    - name: Install Kubernetes packages
-      yum:
-        name:
-          - kubelet
-          - kubeadm
-          - kubectl
-        state: present
-      when: inventory_hostname != 'localhost'
-
-    - name: Start and enable kubelet
-      systemd:
-        name: kubelet
-        state: started
-        enabled: yes
-      when: inventory_hostname != 'localhost'
-
-- name: Deploy application to Kubernetes
-  hosts: localhost
-  vars:
-    kubeconfig: "{{ lookup('env', 'KUBECONFIG') }}"
-    kubectl: "/usr/local/bin/kubectl --kubeconfig={{ kubeconfig }}"
-  tasks:
-    - name: Create namespace
-      shell: "{{ kubectl }} create namespace mess-system --dry-run=client -o yaml | {{ kubectl }} apply -f -"
+    - name: Create namespace if it doesn't exist
+      shell: kubectl create namespace mess-system --dry-run=client -o yaml | kubectl apply -f -
       changed_when: false
 
-    - name: Apply Kubernetes manifests for backend
-      shell: "{{ kubectl }} apply -f ../kubernetes/backend-deployment.yml -n mess-system"
-      changed_when: true
+    - name: Deploy backend application
+      shell: |
+        envsubst < /tmp/kubernetes/backend-deployment.yml | kubectl apply -f -
+        kubectl apply -f /tmp/kubernetes/backend-service.yml
+      vars:
+        ECR_REPOSITORY_URI: "{{ ecr_repository_uri }}"
+      args:
+        chdir: /tmp
+      register: deploy_backend
+      changed_when: deploy_backend.rc == 0
 
-    - name: Apply Kubernetes manifests for backend service
-      shell: "{{ kubectl }} apply -f ../kubernetes/backend-service.yml -n mess-system"
-      changed_when: true
+    - name: Deploy frontend application
+      shell: |
+        envsubst < /tmp/kubernetes/frontend-deployment.yml | kubectl apply -f -
+        kubectl apply -f /tmp/kubernetes/frontend-service.yml
+      vars:
+        ECR_REPOSITORY_URI: "{{ ecr_repository_uri }}"
+      args:
+        chdir: /tmp
+      register: deploy_frontend
+      changed_when: deploy_frontend.rc == 0
 
-    - name: Apply Kubernetes manifests for frontend
-      shell: "{{ kubectl }} apply -f ../kubernetes/frontend-deployment.yml -n mess-system"
-      changed_when: true
-
-    - name: Apply Kubernetes manifests for frontend service
-      shell: "{{ kubectl }} apply -f ../kubernetes/frontend-service.yml -n mess-system"
-      changed_when: true
-
-    - name: Apply Kubernetes manifests for monitoring
-      shell: "{{ kubectl }} apply -f ../kubernetes/monitoring-deployment.yml -n mess-system"
-      changed_when: true
+    - name: Deploy monitoring tools
+      shell: kubectl apply -f /tmp/kubernetes/monitoring-deployment.yml
+      args:
+        chdir: /tmp
+      register: deploy_monitoring
+      changed_when: deploy_monitoring.rc == 0
 
     - name: Wait for deployments to be ready
-      shell: "{{ kubectl }} -n mess-system rollout status deployment/{{ item }}"
-      changed_when: false
+      shell: kubectl rollout status deployment/{{ item }} -n mess-system
       with_items:
         - mess-backend
         - mess-frontend
         - prometheus
         - grafana
+      register: rollout_status
+      changed_when: rollout_status.rc == 0
 
-    - name: Get services information
-      shell: "{{ kubectl }} -n mess-system get services -o wide"
-      register: services_info
+    - name: Get application endpoint
+      shell: kubectl get service mess-frontend-service -n mess-system -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"
+      register: frontend_endpoint
       changed_when: false
 
-    - name: Display services information
+    - name: Display application URL
       debug:
-        var: services_info.stdout_lines
+        msg: "Hostel Mess Management System is available at: http://{{ frontend_endpoint.stdout }}"
+      when: frontend_endpoint.stdout != ""
+
+- name: Setup EC2 instances as workers
+  hosts: ec2_instances
+  become: true
+  gather_facts: true
+  
+  tasks:
+    - name: Install Docker
+      apt:
+        name:
+          - docker.io
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure Docker service is started and enabled
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install Docker Compose
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.10.2/docker-compose-{{ ansible_system }}-{{ ansible_architecture }}
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Create application directory
+      file:
+        path: /opt/mess-management
+        state: directory
+        mode: '0755'
+
+    - name: Copy docker-compose file
+      copy:
+        src: docker-compose.yml
+        dest: /opt/mess-management/docker-compose.yml
+        mode: '0644'
+
+    - name: Launch application using Docker Compose
+      shell: docker-compose up -d
+      args:
+        chdir: /opt/mess-management
+      register: compose_up
+      changed_when: compose_up.rc == 0
