@@ -1,0 +1,25 @@
+---
+all:
+  children:
+    kubernetes:
+      children:
+        master:
+          hosts:
+            master:
+              ansible_host: "{{ master_ip }}"
+              ansible_user: ec2-user
+              ansible_ssh_private_key_file: "{{ ssh_key_file }}"
+        nodes:
+          hosts:
+            node1:
+              ansible_host: "{{ node1_ip }}"
+              ansible_user: ec2-user
+              ansible_ssh_private_key_file: "{{ ssh_key_file }}"
+            node2:
+              ansible_host: "{{ node2_ip }}"
+              ansible_user: ec2-user
+              ansible_ssh_private_key_file: "{{ ssh_key_file }}"
+    local:
+      hosts:
+        localhost:
+          ansible_connection: local

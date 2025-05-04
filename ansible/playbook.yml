@@ -1,0 +1,100 @@
+---
+- name: Setup Kubernetes environment
+  hosts: all
+  become: true
+  vars:
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG') }}"
+  tasks:
+    - name: Install Docker
+      yum:
+        name: docker
+        state: present
+      when: inventory_hostname != 'localhost'
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+      when: inventory_hostname != 'localhost'
+
+    - name: Install kubectl
+      get_url:
+        url: https://storage.googleapis.com/kubernetes-release/release/v1.23.0/bin/linux/amd64/kubectl
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+      when: inventory_hostname == 'localhost'
+
+    - name: Add Kubernetes repository
+      yum_repository:
+        name: kubernetes
+        description: Kubernetes
+        baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+        gpgcheck: yes
+        gpgkey: https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+        enabled: yes
+      when: inventory_hostname != 'localhost'
+
+    - name: Install Kubernetes packages
+      yum:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+      when: inventory_hostname != 'localhost'
+
+    - name: Start and enable kubelet
+      systemd:
+        name: kubelet
+        state: started
+        enabled: yes
+      when: inventory_hostname != 'localhost'
+
+- name: Deploy application to Kubernetes
+  hosts: localhost
+  vars:
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG') }}"
+    kubectl: "/usr/local/bin/kubectl --kubeconfig={{ kubeconfig }}"
+  tasks:
+    - name: Create namespace
+      shell: "{{ kubectl }} create namespace mess-system --dry-run=client -o yaml | {{ kubectl }} apply -f -"
+      changed_when: false
+
+    - name: Apply Kubernetes manifests for backend
+      shell: "{{ kubectl }} apply -f ../kubernetes/backend-deployment.yml -n mess-system"
+      changed_when: true
+
+    - name: Apply Kubernetes manifests for backend service
+      shell: "{{ kubectl }} apply -f ../kubernetes/backend-service.yml -n mess-system"
+      changed_when: true
+
+    - name: Apply Kubernetes manifests for frontend
+      shell: "{{ kubectl }} apply -f ../kubernetes/frontend-deployment.yml -n mess-system"
+      changed_when: true
+
+    - name: Apply Kubernetes manifests for frontend service
+      shell: "{{ kubectl }} apply -f ../kubernetes/frontend-service.yml -n mess-system"
+      changed_when: true
+
+    - name: Apply Kubernetes manifests for monitoring
+      shell: "{{ kubectl }} apply -f ../kubernetes/monitoring-deployment.yml -n mess-system"
+      changed_when: true
+
+    - name: Wait for deployments to be ready
+      shell: "{{ kubectl }} -n mess-system rollout status deployment/{{ item }}"
+      changed_when: false
+      with_items:
+        - mess-backend
+        - mess-frontend
+        - prometheus
+        - grafana
+
+    - name: Get services information
+      shell: "{{ kubectl }} -n mess-system get services -o wide"
+      register: services_info
+      changed_when: false
+
+    - name: Display services information
+      debug:
+        var: services_info.stdout_lines

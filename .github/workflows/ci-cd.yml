@@ -1,0 +1,148 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Install backend dependencies
+        run: |
+          cd mess-backend
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run backend tests
+        run: |
+          cd mess-backend
+          pytest --cov=./ --cov-report=xml
+
+      - name: Upload test coverage
+        uses: codecov/codecov-action@v2
+        with:
+          file: ./mess-backend/coverage.xml
+          fail_ci_if_error: true
+
+  build-and-push:
+    name: Build and Push
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push frontend image to Amazon ECR
+        id: build-frontend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: mess-frontend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd mess-frontend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Build, tag, and push backend image to Amazon ECR
+        id: build-backend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: mess-backend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd mess-backend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+  deploy:
+    name: Deploy
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Update kube config
+        run: aws eks update-kubeconfig --name mess-management-cluster --region ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to EKS
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          # Apply Kubernetes manifests with environment variables
+          export ECR_REPOSITORY_URI=$ECR_REGISTRY
+          envsubst < kubernetes/backend-deployment.yml | kubectl apply -f -
+          kubectl apply -f kubernetes/backend-service.yml
+          envsubst < kubernetes/frontend-deployment.yml | kubectl apply -f -
+          kubectl apply -f kubernetes/frontend-service.yml
+          kubectl apply -f kubernetes/monitoring-deployment.yml
+          
+          # Wait for deployments to complete
+          kubectl rollout status deployment/mess-backend
+          kubectl rollout status deployment/mess-frontend
+          kubectl rollout status deployment/prometheus
+          kubectl rollout status deployment/grafana
+          
+          # Get the external URL
+          echo "Application deployed! Frontend is available at:"
+          kubectl get service mess-frontend-service -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"
+
+  notify:
+    name: Notify
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}

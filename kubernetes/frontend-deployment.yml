@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mess-frontend
+  labels:
+    app: mess-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mess-frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: mess-frontend
+    spec:
+      containers:
+      - name: mess-frontend
+        image: ${ECR_REPOSITORY_URI}/mess-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        env:
+        - name: BACKEND_API_URL
+          value: "http://mess-backend-service:8000"
+      restartPolicy: Always
