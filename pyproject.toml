@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.115.12",
     "pandas>=2.2.3",
     "passlib>=1.7.4",
+    "prometheus-client>=0.21.1",
     "pydantic>=2.11.4",
     "pymongo>=4.12.1",
     "python-jose>=3.4.0",
