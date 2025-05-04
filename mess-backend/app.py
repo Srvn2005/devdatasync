@@ -8,6 +8,9 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 import json
 import os
+import pymongo
+from pymongo import MongoClient
+import certifi
 
 # JWT Settings
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
@@ -86,7 +89,7 @@ class InventoryItem(BaseModel):
     unit: str
     category: str
 
-# In-memory data (will be replaced with a database in production)
+# In-memory data until MongoDB connection is established
 fake_users_db = {
     "admin": {
         "username": "admin",
@@ -130,14 +133,74 @@ inventory = [
     {"name": "Cooking Oil", "quantity": 10.0, "unit": "liter", "category": "Oils"}
 ]
 
+# MongoDB connection - try to connect but use in-memory data if it fails
+mongodb_uri = os.environ.get("MONGODB_URI")
+client = None
+db = None
+
+try:
+    if mongodb_uri:
+        client = MongoClient(mongodb_uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+        # Test the connection
+        client.server_info()
+        db = client.mess_management
+        print("MongoDB connection successful")
+        
+        # Initialize collections if they don't exist
+        if "users" not in db.list_collection_names():
+            # Default admin and student users
+            default_users = [
+                {
+                    "username": "admin",
+                    "name": "Admin User",
+                    "email": "admin@example.com",
+                    "phone": "1234567890",
+                    "room_number": "A-101",
+                    "role": "admin",
+                    "hashed_password": pwd_context.hash("adminpassword")
+                },
+                {
+                    "username": "student",
+                    "name": "Student User",
+                    "email": "student@example.com",
+                    "phone": "9876543210",
+                    "room_number": "B-202",
+                    "role": "student",
+                    "hashed_password": pwd_context.hash("studentpassword")
+                }
+            ]
+            db.users.insert_many(default_users)
+
+        if "menu" not in db.list_collection_names():
+            # Default weekly menu
+            db.menu.insert_many(weekly_menu)
+
+        if "inventory" not in db.list_collection_names():
+            # Default inventory items
+            db.inventory.insert_many(inventory)
+except Exception as e:
+    print(f"MongoDB connection failed: {str(e)}")
+    print("Using in-memory data instead")
+    client = None
+    db = None
+
 # Helper functions
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_user(username: str):
+    if db:
+        user_dict = db.users.find_one({"username": username})
+        if user_dict:
+            # Convert MongoDB ObjectId to string
+            if "_id" in user_dict:
+                user_dict["_id"] = str(user_dict["_id"])
+            return UserInDB(**user_dict)
+    
+    # Fallback to in-memory data
     if username in fake_users_db:
-        user_dict = fake_users_db[username]
-        return UserInDB(**user_dict)
+        return UserInDB(**fake_users_db[username])
+    
     return None
 
 def authenticate_user(username: str, password: str):
@@ -147,6 +210,28 @@ def authenticate_user(username: str, password: str):
     if not verify_password(password, user.hashed_password):
         return False
     return user
+
+def create_user(user_data: dict):
+    # Check if username already exists
+    if get_user(user_data["username"]):
+        return False
+    
+    # Create new user with hashed password
+    if "password" in user_data:
+        user_data["hashed_password"] = pwd_context.hash(user_data["password"])
+        del user_data["password"]
+    
+    # Set default role if not provided
+    if "role" not in user_data:
+        user_data["role"] = "student"
+    
+    # Store in appropriate data source
+    if db:
+        db.users.insert_one(user_data)
+    else:
+        fake_users_db[user_data["username"]] = user_data
+    
+    return True
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -193,29 +278,53 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer", "role": user.role}
 
+@app.post("/register")
+async def register_user(user: UserCreate):
+    # Create new user
+    user_data = user.dict()
+    
+    # Check if username already exists
+    if get_user(user_data["username"]):
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    # Create user in database
+    if create_user(user_data):
+        return {"message": f"User {user.username} created successfully"}
+    else:
+        raise HTTPException(status_code=400, detail="Failed to create user")
+
 @app.get("/menu", response_model=List[MenuItem])
 async def get_weekly_menu():
-    return weekly_menu
+    menu_data = list(db.menu.find({}, {"_id": 0}))
+    return menu_data
 
 @app.post("/menu/update")
 async def update_menu(menu_item: MenuItem, current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    for i, item in enumerate(weekly_menu):
-        if item["day"] == menu_item.day:
-            weekly_menu[i] = menu_item.dict()
-            return {"message": f"Menu for {menu_item.day} updated successfully"}
+    # Convert to dict for MongoDB
+    menu_dict = menu_item.dict()
     
-    weekly_menu.append(menu_item.dict())
-    return {"message": f"Menu for {menu_item.day} added successfully"}
+    # Check if menu for day exists
+    existing_menu = db.menu.find_one({"day": menu_item.day})
+    
+    if existing_menu:
+        # Update existing menu
+        db.menu.update_one({"day": menu_item.day}, {"$set": menu_dict})
+        return {"message": f"Menu for {menu_item.day} updated successfully"}
+    else:
+        # Create new menu entry
+        db.menu.insert_one(menu_dict)
+        return {"message": f"Menu for {menu_item.day} added successfully"}
 
 @app.get("/bookings/{username}")
 async def get_user_bookings(username: str, current_user: User = Depends(get_current_user)):
     if current_user.username != username and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    user_bookings = [booking for booking in bookings if booking["user"] == username]
+    # Get bookings from MongoDB
+    user_bookings = list(db.bookings.find({"user": username}, {"_id": 0}))
     return user_bookings
 
 @app.post("/bookings/save")
@@ -223,18 +332,22 @@ async def save_booking(booking: Booking, current_user: User = Depends(get_curren
     if current_user.username != booking.user and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
+    # Convert booking to dict
+    booking_dict = booking.dict()
+    
     # Check if booking already exists for the date
-    existing_booking = next((b for b in bookings if b["user"] == booking.user and b["date"] == booking.date), None)
+    existing_booking = db.bookings.find_one({"user": booking.user, "date": booking.date})
     
     if existing_booking:
         # Update existing booking
-        for i, b in enumerate(bookings):
-            if b["user"] == booking.user and b["date"] == booking.date:
-                bookings[i] = booking.dict()
-                return {"message": "Booking updated successfully"}
+        db.bookings.update_one(
+            {"user": booking.user, "date": booking.date},
+            {"$set": booking_dict}
+        )
+        return {"message": "Booking updated successfully"}
     else:
         # Create new booking
-        bookings.append(booking.dict())
+        db.bookings.insert_one(booking_dict)
         return {"message": "Booking created successfully"}
 
 @app.post("/feedback/submit")
@@ -242,7 +355,9 @@ async def submit_feedback(feedback: Feedback, current_user: User = Depends(get_c
     if current_user.username != feedback.user and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    feedback_data.append(feedback.dict())
+    # Convert to dict and save to MongoDB
+    feedback_dict = feedback.dict()
+    db.feedback.insert_one(feedback_dict)
     return {"message": "Feedback submitted successfully"}
 
 @app.get("/feedback/{username}")
@@ -250,7 +365,8 @@ async def get_user_feedback(username: str, current_user: User = Depends(get_curr
     if current_user.username != username and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    user_feedback = [feedback for feedback in feedback_data if feedback["user"] == username]
+    # Get user feedback from MongoDB
+    user_feedback = list(db.feedback.find({"user": username}, {"_id": 0}))
     return user_feedback
 
 @app.get("/inventory")

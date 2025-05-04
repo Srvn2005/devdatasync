@@ -63,50 +63,107 @@ def post_api_data(endpoint, data):
 # Login function
 def login_user():
     st.title("🍽️ Hostel Mess Management System")
-    st.subheader("Login")
     
-    col1, col2 = st.columns([1, 1])
+    # Create tabs for login and registration
+    tab1, tab2 = st.tabs(["Login", "Register"])
     
-    with col1:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+    # Login tab
+    with tab1:
+        st.subheader("Login to your account")
         
-        if st.button("Login"):
-            if username and password:
-                # OAuth2 form data needs special handling
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            username = st.text_input("Username", key="login_username")
+            password = st.text_input("Password", type="password", key="login_password")
+            
+            if st.button("Login"):
+                if username and password:
+                    # OAuth2 form data needs special handling
+                    response = requests.post(
+                        f"{API_URL}/token",
+                        data={"username": username, "password": password},
+                        headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        st.session_state.token = data["access_token"]
+                        st.session_state.username = username
+                        st.session_state.role = data["role"]
+                        st.session_state.page = "dashboard" if data["role"] == "admin" else "menu"
+                        st.success("Login successful!")
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password")
+                else:
+                    st.warning("Please enter both username and password")
+        
+        with col2:
+            st.markdown("""
+            ### Demo Accounts
+            
+            **Admin User:**
+            - Username: admin
+            - Password: adminpassword
+            
+            **Student User:**
+            - Username: student
+            - Password: studentpassword
+            """)
+            
+            st.info("This is a demonstration system for the Hostel Mess Management System.")
+    
+    # Registration tab
+    with tab2:
+        st.subheader("Create a new account")
+        
+        reg_username = st.text_input("Username", key="reg_username")
+        reg_name = st.text_input("Full Name", key="reg_name")
+        reg_email = st.text_input("Email Address", key="reg_email")
+        reg_phone = st.text_input("Phone Number", key="reg_phone")
+        reg_room = st.text_input("Room Number", key="reg_room")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            reg_password = st.text_input("Password", type="password", key="reg_password")
+        with col2:
+            reg_confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
+        
+        if st.button("Register"):
+            # Validate inputs
+            if not reg_username or not reg_password:
+                st.error("Username and password are required")
+            elif reg_password != reg_confirm_password:
+                st.error("Passwords do not match")
+            else:
+                # Create user data
+                user_data = {
+                    "username": reg_username,
+                    "name": reg_name,
+                    "email": reg_email,
+                    "phone": reg_phone,
+                    "room_number": reg_room,
+                    "password": reg_password,
+                    "role": "student"
+                }
+                
+                # Send registration request
                 response = requests.post(
-                    f"{API_URL}/token",
-                    data={"username": username, "password": password},
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    f"{API_URL}/register",
+                    json=user_data
                 )
                 
                 if response.status_code == 200:
-                    data = response.json()
-                    st.session_state.token = data["access_token"]
-                    st.session_state.username = username
-                    st.session_state.role = data["role"]
-                    st.session_state.page = "dashboard" if data["role"] == "admin" else "menu"
-                    st.success("Login successful!")
-                    st.rerun()
+                    st.success("Registration successful! Please login with your new account.")
                 else:
-                    st.error("Invalid username or password")
-            else:
-                st.warning("Please enter both username and password")
-    
-    with col2:
-        st.markdown("""
-        ### Demo Accounts
-        
-        **Admin User:**
-        - Username: admin
-        - Password: adminpassword
-        
-        **Student User:**
-        - Username: student
-        - Password: studentpassword
-        """)
-        
-        st.info("This is a demonstration system for the Hostel Mess Management System.")
+                    error_detail = "Registration failed"
+                    if response.status_code == 400:
+                        try:
+                            error_detail = response.json().get("detail", error_detail)
+                        except:
+                            pass
+                    st.error(f"{error_detail}")
 
 # Sidebar navigation
 def render_sidebar():
@@ -121,7 +178,7 @@ def render_sidebar():
     if st.session_state.role == "admin":
         selected_page = st.sidebar.radio(
             "Go to:",
-            ["Dashboard", "Menu Management", "Student Records", "Inventory", "Reports", "Logout"]
+            ["Dashboard", "Menu Management", "Student Records", "Reports", "Logout"]
         )
         
         if selected_page == "Dashboard":
@@ -130,8 +187,6 @@ def render_sidebar():
             st.session_state.page = "menu_management"
         elif selected_page == "Student Records":
             st.session_state.page = "student_records"
-        elif selected_page == "Inventory":
-            st.session_state.page = "inventory"
         elif selected_page == "Reports":
             st.session_state.page = "reports"
         elif selected_page == "Logout":
