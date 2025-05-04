@@ -35,7 +35,11 @@ def get_api_data(endpoint):
     
     try:
         response = requests.get(f"{API_URL}{endpoint}", headers=headers)
-        return response.json()
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Error fetching data from API: Status code {response.status_code}, Response: {response.text}")
+            return None
     except Exception as e:
         st.error(f"Error fetching data from API: {str(e)}")
         return None
@@ -47,7 +51,11 @@ def post_api_data(endpoint, data):
     
     try:
         response = requests.post(f"{API_URL}{endpoint}", json=data, headers=headers)
-        return response.json()
+        if response.status_code == 200 or response.status_code == 201:
+            return response.json()
+        else:
+            st.error(f"Error posting data to API: Status code {response.status_code}, Response: {response.text}")
+            return None
     except Exception as e:
         st.error(f"Error posting data to API: {str(e)}")
         return None
@@ -430,14 +438,27 @@ def show_attendance():
 def show_dashboard():
     st.title("📊 Admin Dashboard")
     
-    # Get dashboard data
+    # Get dashboard data with separate error handling for each component
     summary_data = get_api_data("/dashboard/summary")
-    attendance_data = get_api_data("/dashboard/attendance")
-    feedback_data = get_api_data("/dashboard/feedback")
+    if not summary_data:
+        st.error("Could not fetch summary data. Please try again later.")
+        summary_data = {
+            "student_count": 0,
+            "booking_count": 0,
+            "feedback_count": 0,
+            "inventory_summary": {"total_items": 0},
+            "today_meals": {"breakfast": 0, "lunch": 0, "dinner": 0}
+        }
     
-    if not summary_data or not attendance_data or not feedback_data:
-        st.error("Could not fetch dashboard data. Please try again later.")
-        return
+    attendance_data = get_api_data("/dashboard/attendance")
+    if not attendance_data:
+        st.warning("Could not fetch attendance data. Attendance charts will not be displayed.")
+        attendance_data = []
+    
+    feedback_data = get_api_data("/dashboard/feedback")
+    if not feedback_data:
+        st.warning("Could not fetch feedback data. Feedback summaries will not be displayed.")
+        feedback_data = {"average_ratings": {}, "recent_comments": []}
     
     # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
