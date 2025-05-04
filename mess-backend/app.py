@@ -295,27 +295,51 @@ async def register_user(user: UserCreate):
 
 @app.get("/menu", response_model=List[MenuItem])
 async def get_weekly_menu():
-    menu_data = list(db.menu.find({}, {"_id": 0}))
-    return menu_data
+    if db:
+        try:
+            menu_data = list(db.menu.find({}, {"_id": 0}))
+            return menu_data
+        except Exception as e:
+            print(f"Error getting menu from MongoDB: {str(e)}")
+    
+    # Fallback to in-memory data
+    return weekly_menu
 
 @app.post("/menu/update")
 async def update_menu(menu_item: MenuItem, current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Convert to dict for MongoDB
+    # Convert to dict for storage
     menu_dict = menu_item.dict()
     
-    # Check if menu for day exists
-    existing_menu = db.menu.find_one({"day": menu_item.day})
+    if db:
+        try:
+            # Check if menu for day exists
+            existing_menu = db.menu.find_one({"day": menu_item.day})
+            
+            if existing_menu:
+                # Update existing menu
+                db.menu.update_one({"day": menu_item.day}, {"$set": menu_dict})
+                return {"message": f"Menu for {menu_item.day} updated successfully"}
+            else:
+                # Create new menu entry
+                db.menu.insert_one(menu_dict)
+                return {"message": f"Menu for {menu_item.day} added successfully"}
+        except Exception as e:
+            print(f"Error updating menu in MongoDB: {str(e)}")
     
-    if existing_menu:
+    # Fallback to in-memory data
+    existing_item = next((i for i in weekly_menu if i["day"] == menu_item.day), None)
+    if existing_item:
         # Update existing menu
-        db.menu.update_one({"day": menu_item.day}, {"$set": menu_dict})
+        for i, menu in enumerate(weekly_menu):
+            if menu["day"] == menu_item.day:
+                weekly_menu[i] = menu_dict
         return {"message": f"Menu for {menu_item.day} updated successfully"}
     else:
         # Create new menu entry
-        db.menu.insert_one(menu_dict)
+        weekly_menu.append(menu_dict)
         return {"message": f"Menu for {menu_item.day} added successfully"}
 
 @app.get("/bookings/{username}")
@@ -323,8 +347,16 @@ async def get_user_bookings(username: str, current_user: User = Depends(get_curr
     if current_user.username != username and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Get bookings from MongoDB
-    user_bookings = list(db.bookings.find({"user": username}, {"_id": 0}))
+    if db:
+        try:
+            # Get bookings from MongoDB
+            user_bookings = list(db.bookings.find({"user": username}, {"_id": 0}))
+            return user_bookings
+        except Exception as e:
+            print(f"Error getting bookings from MongoDB: {str(e)}")
+    
+    # Fallback to in-memory data
+    user_bookings = [booking for booking in bookings if booking["user"] == username]
     return user_bookings
 
 @app.post("/bookings/save")
@@ -335,19 +367,36 @@ async def save_booking(booking: Booking, current_user: User = Depends(get_curren
     # Convert booking to dict
     booking_dict = booking.dict()
     
-    # Check if booking already exists for the date
-    existing_booking = db.bookings.find_one({"user": booking.user, "date": booking.date})
+    if db:
+        try:
+            # Check if booking already exists for the date
+            existing_booking = db.bookings.find_one({"user": booking.user, "date": booking.date})
+            
+            if existing_booking:
+                # Update existing booking
+                db.bookings.update_one(
+                    {"user": booking.user, "date": booking.date},
+                    {"$set": booking_dict}
+                )
+                return {"message": "Booking updated successfully"}
+            else:
+                # Create new booking
+                db.bookings.insert_one(booking_dict)
+                return {"message": "Booking created successfully"}
+        except Exception as e:
+            print(f"Error saving booking to MongoDB: {str(e)}")
     
+    # Fallback to in-memory data
+    existing_booking = next((b for b in bookings if b["user"] == booking.user and b["date"] == booking.date), None)
     if existing_booking:
         # Update existing booking
-        db.bookings.update_one(
-            {"user": booking.user, "date": booking.date},
-            {"$set": booking_dict}
-        )
+        for i, b in enumerate(bookings):
+            if b["user"] == booking.user and b["date"] == booking.date:
+                bookings[i] = booking_dict
         return {"message": "Booking updated successfully"}
     else:
         # Create new booking
-        db.bookings.insert_one(booking_dict)
+        bookings.append(booking_dict)
         return {"message": "Booking created successfully"}
 
 @app.post("/feedback/submit")
@@ -355,9 +404,19 @@ async def submit_feedback(feedback: Feedback, current_user: User = Depends(get_c
     if current_user.username != feedback.user and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Convert to dict and save to MongoDB
+    # Convert to dict
     feedback_dict = feedback.dict()
-    db.feedback.insert_one(feedback_dict)
+    
+    if db:
+        try:
+            # Save to MongoDB
+            db.feedback.insert_one(feedback_dict)
+            return {"message": "Feedback submitted successfully"}
+        except Exception as e:
+            print(f"Error saving feedback to MongoDB: {str(e)}")
+    
+    # Fallback to in-memory data
+    feedback_data.append(feedback_dict)
     return {"message": "Feedback submitted successfully"}
 
 @app.get("/feedback/{username}")
@@ -365,8 +424,16 @@ async def get_user_feedback(username: str, current_user: User = Depends(get_curr
     if current_user.username != username and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Get user feedback from MongoDB
-    user_feedback = list(db.feedback.find({"user": username}, {"_id": 0}))
+    if db:
+        try:
+            # Get user feedback from MongoDB
+            user_feedback = list(db.feedback.find({"user": username}, {"_id": 0}))
+            return user_feedback
+        except Exception as e:
+            print(f"Error getting feedback from MongoDB: {str(e)}")
+    
+    # Fallback to in-memory data
+    user_feedback = [f for f in feedback_data if f["user"] == username]
     return user_feedback
 
 @app.get("/inventory")
