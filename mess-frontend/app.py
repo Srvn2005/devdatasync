@@ -99,21 +99,7 @@ def login_user():
                 else:
                     st.warning("Please enter both username and password")
         
-        with col2:
-            st.markdown("""
-            ### Demo Accounts
-            
-            **Admin User:**
-            - Username: admin
-            - Password: adminpassword
-            
-            **Student User:**
-            - Username: student
-            - Password: studentpassword
-            """)
-            
-            st.info("This is a demonstration system for the Hostel Mess Management System.")
-    
+        
     # Registration tab
     with tab2:
         st.subheader("Create a new account")
